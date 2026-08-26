@@ -1,0 +1,43 @@
+# Zotero 10 API Notes
+
+Research date: 2026-08-26.
+
+## Compatibility
+
+Zotero's developer documentation says a tested Zotero 10 plugin should use `strict_max_version: "10.0.*"`. Zotero 10 uses the same Firefox 140 ESR base as Zotero 9, but includes Local API and internal data/API changes.
+
+Source: [Zotero 10 for Developers](https://www.zotero.org/support/dev/zotero_10_for_developers).
+
+## Local HTTP hardening
+
+Zotero 10 requires the Host header to resolve to loopback. Browser-like requests are dropped unless they are from the connector, explicitly allowed by the endpoint, or carry `Zotero-Allowed-Request`. The Obsidian client always supplies this header, while the Companion does not opt out of Zotero's protection.
+
+Source: [Local HTTP server and local API](https://www.zotero.org/support/dev/zotero_10_for_developers#local_http_server_and_local_api).
+
+## Endpoint contract
+
+Current Zotero endpoints are registered in `Zotero.Server.Endpoints`. A single-argument `init(requestData)` receives method, path, params, headers, and parsed JSON data, and returns a status code or `[status, contentType, body]` tuple.
+
+Source: [`server.js` in the Zotero 10.0.1 release](https://github.com/zotero/zotero/blob/10.0.1/chrome/content/zotero/xpcom/server/server.js).
+
+## Linked attachment
+
+`Zotero.Attachments.linkFromFile({ file })` creates a `linked_file` attachment whose path points to the original file. It accepts either an `nsIFile` or string path.
+
+Source: [`attachments.js` in the Zotero 10.0.1 release](https://github.com/zotero/zotero/blob/10.0.1/chrome/content/zotero/xpcom/attachments.js).
+
+## Native recognition
+
+At the inspected Zotero source revision, `Zotero.RecognizeDocument._recognize(attachment)` extracts PDF recognizer data, queries Zotero's recognition service, and creates a bibliographic item. The public queue method then assigns the attachment parent and may rename the file. The Companion calls `_recognize()` and performs the parent assignment itself so the Vault filename remains unchanged.
+
+Source: [`recognizeDocument.js` in the Zotero 10.0.1 release](https://github.com/zotero/zotero/blob/10.0.1/chrome/content/zotero/xpcom/recognizeDocument.js).
+
+## Upgrade rule
+
+Do not increase `strict_max_version` merely because installation appears to work. For each new Zotero line:
+
+1. inspect `attachments.js`, `recognizeDocument.js`, and `server/server.js`;
+2. run the normal and difficult PDF acceptance cases;
+3. confirm the Vault filename is unchanged;
+4. verify failure/retry and duplicate-request behavior;
+5. only then update the manifest and release metadata.

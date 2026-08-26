@@ -1,0 +1,9 @@
+{
+  "id": "zotero-vault-bridge",
+  "name": "Zotero Vault Bridge",
+  "version": "0.1.0",
+  "minAppVersion": "1.8.0",
+  "description": "Keep PDFs in your vault while Zotero 10 recognizes and manages their metadata.",
+  "author": "Zotero Vault Bridge contributors",
+  "isDesktopOnly": true
+}

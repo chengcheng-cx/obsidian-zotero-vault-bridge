@@ -1,0 +1,14 @@
+{
+  "name": "@zvb/zotero-companion",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Zotero 10 companion for Obsidian Zotero Vault Bridge.",
+  "license": "MIT",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node --test test/*.test.cjs"
+  },
+  "devDependencies": {
+    "archiver": "^7.0.1"
+  }
+}

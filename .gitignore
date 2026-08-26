@@ -1,0 +1,16 @@
+node_modules/
+dist/
+*.log
+.DS_Store
+Thumbs.db
+
+# Generated Obsidian release artifact
+obsidian-plugin/main.js
+obsidian-plugin/*.map
+obsidian-plugin/data.json
+
+# Obsidian runtime state in the development vault
+test-vault/.obsidian/
+
+# Local PDFs are intentionally not committed
+test-vault/01_Papers/*.pdf
