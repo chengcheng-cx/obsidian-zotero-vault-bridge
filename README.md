@@ -37,7 +37,7 @@ npm run build
 建置輸出：
 
 - Obsidian：`obsidian-plugin/main.js`、`manifest.json`、`styles.css`
-- Zotero：`zotero-companion/dist/zotero-vault-bridge-companion-0.1.0.xpi`
+- Zotero：`zotero-companion/dist/zotero-vault-bridge-companion-0.1.1.xpi`
 
 ## 安裝 Zotero Companion
 

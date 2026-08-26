@@ -15,6 +15,18 @@ if (manifest.version !== packageJson.version) {
 	throw new Error(`Version mismatch: package.json=${packageJson.version}, manifest.json=${manifest.version}`);
 }
 
+const zoteroApplication = manifest.applications?.zotero;
+if (!zoteroApplication?.id) {
+	throw new Error("manifest.json must define applications.zotero.id");
+}
+if (!zoteroApplication.update_url) {
+	throw new Error("manifest.json must define applications.zotero.update_url for Zotero 10");
+}
+const updateUrl = new URL(zoteroApplication.update_url);
+if (updateUrl.protocol !== "https:") {
+	throw new Error("applications.zotero.update_url must use HTTPS");
+}
+
 await rm(distributionDirectory, { recursive: true, force: true });
 await mkdir(distributionDirectory, { recursive: true });
 await cp(sourceDirectory, path.join(distributionDirectory, "unpacked"), { recursive: true });
