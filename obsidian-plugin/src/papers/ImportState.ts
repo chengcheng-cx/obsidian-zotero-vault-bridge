@@ -75,7 +75,7 @@ export class ImportStateStore {
 			return true;
 		}
 		if (record.status === "complete") {
-			return false;
+			return !record.literatureNote;
 		}
 		if (record.status === "failed") {
 			return includeFailed;
@@ -136,6 +136,19 @@ export class ImportStateStore {
 		this.records[path] = {
 			...existing,
 			status: "complete",
+			updatedAt: timestamp(),
+		};
+		await this.persist();
+	}
+
+	async markLiteratureNote(path: string, literatureNote: string): Promise<void> {
+		let existing = this.records[path];
+		if (!existing) {
+			throw new Error(`Cannot attach a Literature Note to an unknown paper: ${path}`);
+		}
+		this.records[path] = {
+			...existing,
+			literatureNote,
 			updatedAt: timestamp(),
 		};
 		await this.persist();

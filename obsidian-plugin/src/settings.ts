@@ -60,6 +60,7 @@ export interface SettingsHost {
 	updateSettings(patch: Partial<BridgeSettings>): Promise<void>;
 	testConnection(): Promise<void>;
 	scanPapers(includeFailed: boolean): Promise<void>;
+	syncLiteratureNotes(): Promise<void>;
 }
 
 export class BridgeSettingTab extends PluginSettingTab {
@@ -72,7 +73,7 @@ export class BridgeSettingTab extends PluginSettingTab {
 		containerEl.empty();
 		containerEl.createEl("h2", { text: "Zotero Vault Bridge" });
 		containerEl.createEl("p", {
-			text: "Milestone 1 links and recognizes PDFs. Literature note settings are reserved for the next milestone.",
+			text: "Links and recognizes PDFs, then creates idempotent Literature Notes from Zotero metadata.",
 			cls: "zotero-vault-bridge-settings-note",
 		});
 
@@ -90,6 +91,22 @@ export class BridgeSettingTab extends PluginSettingTab {
 			.addToggle(toggle => toggle
 				.setValue(this.host.settings.watchForNewPdfs)
 				.onChange(async value => this.host.updateSettings({ watchForNewPdfs: value })));
+
+		new Setting(containerEl)
+			.setName("Literature Notes folder")
+			.setDesc("Vault-relative output folder for citation-key Markdown notes.")
+			.addText(text => text
+				.setPlaceholder(DEFAULT_SETTINGS.literatureFolder)
+				.setValue(this.host.settings.literatureFolder)
+				.onChange(async value => this.host.updateSettings({ literatureFolder: normalizePath(value) })));
+
+		new Setting(containerEl)
+			.setName("Literature Note template")
+			.setDesc("Vault-relative Markdown template used when a note is first created.")
+			.addText(text => text
+				.setPlaceholder(DEFAULT_SETTINGS.templatePath)
+				.setValue(this.host.settings.templatePath)
+				.onChange(async value => this.host.updateSettings({ templatePath: normalizePath(value) })));
 
 		new Setting(containerEl)
 			.setName("Scan on startup")
@@ -126,5 +143,12 @@ export class BridgeSettingTab extends PluginSettingTab {
 			.addButton(button => button
 				.setButtonText("Retry")
 				.onClick(async () => this.host.scanPapers(true)));
+
+		new Setting(containerEl)
+			.setName("Sync Literature Notes")
+			.setDesc("Refresh managed frontmatter for all recognized PDFs while preserving note bodies.")
+			.addButton(button => button
+				.setButtonText("Sync")
+				.onClick(async () => this.host.syncLiteratureNotes()));
 	}
 }

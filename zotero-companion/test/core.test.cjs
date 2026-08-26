@@ -47,3 +47,13 @@ test("extracts a four-digit year", () => {
 	assert.equal(core.extractYear("Spring 1998"), "1998");
 	assert.equal(core.extractYear("forthcoming"), "");
 });
+
+test("generates a deterministic citation key from author, year, and title", () => {
+	assert.equal(core.generateCitationKey({
+		creators: [{ firstName: "Tasnim", lastName: "Abdel-Aty", creatorType: "author" }],
+		year: "2025",
+		title: "Evaluation of the Digital Product Passport",
+	}, "ITEM0001"), "abdelaty2025evaluation");
+	assert.equal(core.isSafeCitationKey("abdelaty2025evaluation"), true);
+	assert.equal(core.isSafeCitationKey("unsafe/key"), false);
+});

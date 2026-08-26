@@ -143,7 +143,45 @@ var VaultBridge = new function () {
 		}
 	}
 
-	function itemMetadata(item, attachment, alreadyImported) {
+	async function citationKeyExists(candidate, itemID) {
+		let fieldID = Zotero.ItemFields.getID("citationKey");
+		if (!fieldID) {
+			throw new BridgeError(500, "citation_key_field_missing", "This Zotero version does not expose the citationKey field.");
+		}
+		let itemIDs = await Zotero.DB.columnQueryAsync(
+			"SELECT I.itemID "
+				+ "FROM items I "
+				+ "JOIN itemData ID ON ID.itemID = I.itemID "
+				+ "JOIN itemDataValues IDV ON IDV.valueID = ID.valueID "
+				+ "LEFT JOIN deletedItems DI ON DI.itemID = I.itemID "
+				+ "WHERE I.libraryID = ? AND ID.fieldID = ? AND LOWER(IDV.value) = LOWER(?) "
+				+ "AND I.itemID != ? AND DI.itemID IS NULL",
+			[Zotero.Libraries.userLibraryID, fieldID, candidate, itemID]
+		);
+		return Boolean(itemIDs?.length);
+	}
+
+	async function ensureCitationKey(item, metadata, existing) {
+		if (existing) {
+			return existing;
+		}
+		let candidate = VaultBridgeCore.generateCitationKey(metadata, item.key);
+		if (await citationKeyExists(candidate, item.id)) {
+			let suffix = `-${item.key.toLocaleLowerCase("en-US")}`;
+			candidate = candidate.slice(0, 128 - suffix.length) + suffix;
+		}
+		if (!VaultBridgeCore.isSafeCitationKey(candidate)) {
+			throw new BridgeError(500, "citation_key_invalid", "The generated citation key is not safe for an Obsidian filename.");
+		}
+		if (await citationKeyExists(candidate, item.id)) {
+			throw new BridgeError(409, "citation_key_collision", "Zotero already contains the generated citation key.");
+		}
+		item.setField("citationKey", candidate);
+		await item.saveTx();
+		return candidate;
+	}
+
+	async function itemMetadata(item, attachment, alreadyImported) {
 		let json = item.toJSON();
 		let date = json.date || field(item, "date");
 		let publicationTitle = json.publicationTitle
@@ -160,6 +198,14 @@ var VaultBridge = new function () {
 				creatorType: creator.creatorType || "author",
 			}))
 			: [];
+		let title = json.title || field(item, "title");
+		let year = VaultBridgeCore.extractYear(date);
+		let citationKey = await ensureCitationKey(item, {
+			title,
+			creators,
+			date,
+			year,
+		}, json.citationKey || field(item, "citationKey"));
 
 		return {
 			success: true,
@@ -168,15 +214,15 @@ var VaultBridge = new function () {
 			attachmentKey: attachment.key,
 			metadata: {
 				itemType: json.itemType || item.itemType,
-				title: json.title || field(item, "title"),
+				title,
 				creators,
 				date,
-				year: VaultBridgeCore.extractYear(date),
+				year,
 				publicationTitle,
 				doi: json.DOI || field(item, "DOI"),
 				abstractNote: json.abstractNote || field(item, "abstractNote"),
 				url: json.url || field(item, "url"),
-				citationKey: json.citationKey || field(item, "citationKey"),
+				citationKey,
 			},
 			selectUri: `zotero://select/library/items/${item.key}`,
 		};

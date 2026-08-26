@@ -1,15 +1,16 @@
 ---
 type: literature
-title: "{{title}}"
+title: {{title_yaml}}
 authors:
 {{authors_yaml}}
-year: {{year}}
-publication: "{{publicationTitle}}"
-doi: "{{doi}}"
-citation_key: "{{citationKey}}"
-zotero_item_key: "{{zoteroItemKey}}"
-zotero_attachment_key: "{{attachmentKey}}"
-pdf: "[[{{pdfPath}}]]"
+year: {{year_yaml}}
+publication: {{publicationTitle_yaml}}
+doi: {{doi_yaml}}
+citation_key: {{citationKey_yaml}}
+zotero_item_key: {{zoteroItemKey_yaml}}
+zotero_attachment_key: {{attachmentKey_yaml}}
+zotero_select: {{zoteroSelect_yaml}}
+pdf: {{pdf_yaml}}
 ---
 
 # {{title}}

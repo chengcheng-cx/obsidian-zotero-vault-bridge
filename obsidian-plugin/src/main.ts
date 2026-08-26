@@ -4,6 +4,7 @@ import {
 	Plugin,
 	TFile,
 } from "obsidian";
+import { LiteratureNoteService } from "./literature/LiteratureNoteService";
 import { ImportService } from "./papers/ImportService";
 import { ImportStateStore, type PaperRecords } from "./papers/ImportState";
 import { PaperWatcher } from "./papers/PaperWatcher";
@@ -36,6 +37,7 @@ export default class ZoteroVaultBridgePlugin extends Plugin implements SettingsH
 	private bridgeToken!: string;
 	private state!: ImportStateStore;
 	private client!: ZoteroBridgeClient;
+	private literatureNotes!: LiteratureNoteService;
 	private importer!: ImportService;
 	private watcher!: PaperWatcher;
 	private saveQueue: Promise<void> = Promise.resolve();
@@ -52,10 +54,15 @@ export default class ZoteroVaultBridgePlugin extends Plugin implements SettingsH
 			() => this.settings.zoteroEndpoint,
 			() => this.bridgeToken,
 		);
+		this.literatureNotes = new LiteratureNoteService(
+			this.app,
+			() => this.settings,
+		);
 		this.importer = new ImportService(
 			this.app,
 			this.state,
 			this.client,
+			this.literatureNotes,
 			() => this.settings,
 			() => this.getVaultRoot(),
 		);
@@ -94,6 +101,12 @@ export default class ZoteroVaultBridgePlugin extends Plugin implements SettingsH
 		new Notice(`PDF scan complete: ${result.imported} imported, ${result.failed} failed, ${result.discovered} found.`);
 	}
 
+	async syncLiteratureNotes(): Promise<void> {
+		new Notice("Syncing Literature Notes…");
+		let result = await this.watcher.syncLiteratureNotes();
+		new Notice(`Literature Note sync complete: ${result.imported} updated, ${result.failed} failed, ${result.discovered} PDFs found.`);
+	}
+
 	private addCommands(): void {
 		this.addCommand({
 			id: "test-zotero-connection",
@@ -127,6 +140,25 @@ export default class ZoteroVaultBridgePlugin extends Plugin implements SettingsH
 		});
 
 		this.addCommand({
+			id: "create-update-active-literature-note",
+			name: "Create or update Literature Note for active PDF",
+			checkCallback: checking => {
+				let file = this.app.workspace.getActiveFile();
+				let available = file instanceof TFile && file.extension.toLocaleLowerCase("en-US") === "pdf";
+				if (available && !checking && file) {
+					void this.createOrUpdateActiveLiteratureNote(file);
+				}
+				return available;
+			},
+		});
+
+		this.addCommand({
+			id: "sync-literature-notes",
+			name: "Sync all Literature Notes",
+			callback: () => void this.syncLiteratureNotes(),
+		});
+
+		this.addCommand({
 			id: "initialize-vault-folders",
 			name: "Initialize bridge folders",
 			callback: () => void this.initializeFolders(),
@@ -137,6 +169,23 @@ export default class ZoteroVaultBridgePlugin extends Plugin implements SettingsH
 		try {
 			let record = await this.importer.importFile(file, { force: true });
 			new Notice(`Recognized: ${record.metadata?.title || file.basename}`);
+		}
+		catch (error) {
+			new Notice(this.userMessage(error), 10_000);
+		}
+	}
+
+	private async createOrUpdateActiveLiteratureNote(file: TFile): Promise<void> {
+		try {
+			let record = await this.importer.importFile(file, { force: true });
+			let note = record.literatureNote
+				? this.app.vault.getAbstractFileByPath(record.literatureNote)
+				: null;
+			if (!(note instanceof TFile)) {
+				throw new Error("The Literature Note was not created in the configured folder.");
+			}
+			await this.app.workspace.getLeaf(false).openFile(note);
+			new Notice(`Literature Note ready: ${note.path}`);
 		}
 		catch (error) {
 			new Notice(this.userMessage(error), 10_000);

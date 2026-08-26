@@ -1,8 +1,10 @@
 # Obsidian Zotero Vault Bridge
 
-讓 PDF 實體檔留在 Obsidian Vault，同時由 Zotero 10 建立 linked attachment、執行原生「Retrieve Metadata」，並把辨識結果回傳給 Obsidian。
+繁體中文 | [English](README.en.md)
 
-目前完成的是第一個可安裝里程碑：
+讓 PDF 實體檔留在 Obsidian Vault，由 Zotero 10 建立 linked attachment、執行原生 metadata recognition 並保存 citation key，再由 Obsidian 建立可持續編輯的 Literature Note。
+
+目前完成兩個可安裝里程碑：
 
 ```text
 01_Papers/*.pdf
@@ -11,24 +13,24 @@ Obsidian Zotero Vault Bridge
         ↓ localhost + pairing token
 Zotero Vault Bridge Companion
         ↓
-linked attachment → Zotero native recognition
+linked attachment → Zotero native recognition → citation key
         ↓
-Zotero bibliographic item + persistent import state
+02_Literature/<citationKey>.md
 ```
 
 ## 需求
 
 - Zotero `10.0.x`
-- Obsidian Desktop
+- Obsidian Desktop `1.8.0` 以上
 - Node.js 20 以上（只在建置時需要）
 - Zotero 與 Obsidian 必須在同一台電腦執行
 
-Zotero 10 的 manifest 相容範圍依官方建議設定為 `10.0.*`。Companion 會使用 Zotero 的內部 JavaScript API，因此新的 Zotero 次要／主要版本必須重新驗證後才會放寬相容範圍。
+Companion 使用 Zotero 的內部 JavaScript API，因此 manifest 暫時限制為已驗證的 `10.0.*`。
 
 ## 建置
 
 ```powershell
-cd "D:\14 OpenAI\obsidian-zotero-vault-bridge"
+cd obsidian-zotero-vault-bridge
 npm install
 npm run check
 npm run build
@@ -37,21 +39,15 @@ npm run build
 建置輸出：
 
 - Obsidian：`obsidian-plugin/main.js`、`manifest.json`、`styles.css`
-- Zotero：`zotero-companion/dist/zotero-vault-bridge-companion-0.1.1.xpi`
+- Zotero：`zotero-companion/dist/zotero-vault-bridge-companion-0.2.0.xpi`
 
 ## 安裝 Zotero Companion
 
 1. 開啟 Zotero。
-2. 選擇 `Tools → Add-ons`。
-3. 齒輪選單選擇 `Install Add-on From File…`。
+2. 選擇 `Tools → Plugins`。
+3. 齒輪選單選擇 `Install Plugin From File…`。
 4. 選擇建置出的 `.xpi`。
 5. 重新啟動 Zotero。
-
-Companion 只註冊三個 localhost endpoint：
-
-- `GET /zotero-vault-bridge/status`
-- `POST /zotero-vault-bridge/configure`
-- `POST /zotero-vault-bridge/import`
 
 ## 安裝 Obsidian Plugin
 
@@ -61,7 +57,7 @@ Companion 只註冊三個 localhost endpoint：
 <vault>/.obsidian/plugins/zotero-vault-bridge/
 ```
 
-複製以下三個檔案進去：
+將以下三個檔案複製進去：
 
 ```text
 obsidian-plugin/main.js
@@ -69,33 +65,47 @@ obsidian-plugin/manifest.json
 obsidian-plugin/styles.css
 ```
 
-接著在 Obsidian `Settings → Community plugins` 啟用 `Zotero Vault Bridge`。
+重新載入 Obsidian，然後在 `Settings → Community plugins` 啟用 `Zotero Vault Bridge`。
 
-## 第一次配對與使用
+## 第一次使用
 
 1. 確認 Zotero 正在執行。
-2. 在 Obsidian Command Palette 執行 `Zotero Vault Bridge: Test connection`。
-3. Plugin 會產生本機 pairing token，並把目前 Vault root 登記為 Companion 唯一允許的根目錄。
-4. 將 PDF 放入 `01_Papers/`，或執行 `Import active PDF`。
+2. 執行 `Zotero Vault Bridge: Initialize bridge folders`。
+3. 執行 `Zotero Vault Bridge: Test connection`，將目前 Vault 與 Companion 配對。
+4. 將 PDF 放入 `01_Papers/`，或開啟 PDF 後執行 `Import active PDF`。
+5. Plugin 會在 Zotero 建立或重用 linked attachment、辨識文獻資料並保存 citation key。
+6. Literature Note 會建立在 `02_Literature/<citationKey>.md`。
 
-Companion 會拒絕：
+可用命令：
 
-- 非 `localhost` 的 Zotero HTTP server 請求
-- 未帶正確 pairing token 的匯入
-- 非 `.pdf` 檔案
-- 不在已配對 Vault root 內的路徑
-- 不存在的檔案或目錄路徑
+- `Scan papers folder`
+- `Retry failed PDFs`
+- `Create or update Literature Note for active PDF`
+- `Sync all Literature Notes`
 
-## 保證與目前限制
+## Literature Note 行為
+
+- citation key 由第一作者、年份與標題決定；發生碰撞時加入 Zotero item key。
+- 新筆記使用 `Templates/Literature.md`。
+- 重新同步只更新 plugin 管理的 frontmatter。
+- 使用者撰寫的正文及自訂 frontmatter 欄位會保留。
+- frontmatter 包含 Zotero item、PDF wikilink 與 `zotero://select` 連結。
+- 同一 PDF 與同一 citation key 不會重複建立筆記。
+
+## 安全與檔案所有權
 
 - PDF 使用 Zotero linked attachment，不會複製到 Zotero storage。
-- Companion 刻意略過 Zotero 的 linked-file auto-rename 流程，避免改名破壞 Obsidian 連結。
-- 同一路徑已有 linked attachment 時會重用，避免重複匯入。
-- 辨識失敗時會保留 standalone linked attachment，之後可以重試或在 Zotero 手動處理。
-- Zotero 目前必須開啟；本 repo 尚未自動啟動 Zotero。
-- Literature Note 與 `[@` citation autocomplete 是下一個里程碑，介面與狀態欄位已預留，但本版不宣稱完成。
+- PDF 仍由 Obsidian Vault 管理，Companion 不會自動重新命名。
+- Companion 只接受 localhost、正確 pairing token、`.pdf` 檔案及已配對 Vault root 內的路徑。
+- Citation key 透過已配對的 Companion 寫入 Zotero，不要求開啟 Zotero Local API。
 
-架構與驗收細節見 [docs/architecture.md](docs/architecture.md)、[docs/development-plan.md](docs/development-plan.md) 與 [docs/acceptance-test.md](docs/acceptance-test.md)。
+## 目前限制
+
+- Zotero 必須保持開啟。
+- Literature Note 的正文只在首次建立時由模板產生；後續同步刻意不覆寫正文。
+- `[@` citation autocomplete 是下一個里程碑，尚未完成。
+
+架構與驗收細節見 [architecture](docs/architecture.md)、[development plan](docs/development-plan.md) 與 [acceptance test](docs/acceptance-test.md)。
 
 ## 官方依據
 

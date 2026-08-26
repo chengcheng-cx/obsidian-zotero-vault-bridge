@@ -8,7 +8,7 @@ const sourceDirectory = path.resolve(__dirname, "../src");
 const coreSource = fs.readFileSync(path.join(sourceDirectory, "core.js"), "utf8");
 const bridgeSource = fs.readFileSync(path.join(sourceDirectory, "bridge.js"), "utf8");
 
-function createHarness() {
+function createHarness({ citationCollision = false, initialCitationKey = "" } = {}) {
 	const vaultRoot = "C:\\Research\\Vault";
 	const pdfPath = `${vaultRoot}\\01_Papers\\paper.pdf`;
 	const preferences = new Map();
@@ -16,6 +16,8 @@ function createHarness() {
 	let linked = false;
 	let linkCalls = 0;
 	let recognizeCalls = 0;
+	let citationSaveCalls = 0;
+	let citationKey = initialCitationKey;
 
 	const parent = {
 		id: 2,
@@ -29,9 +31,14 @@ function createHarness() {
 				publicationTitle: "Test Journal",
 				DOI: "10.0000/test",
 				creators: [{ firstName: "Ada", lastName: "Lovelace", creatorType: "author" }],
+				citationKey,
 			};
 		},
-		getField() { return ""; },
+		getField(name) { return name === "citationKey" ? citationKey : ""; },
+		setField(name, value) {
+			if (name === "citationKey") citationKey = value;
+		},
+		async saveTx() { citationSaveCalls += 1; },
 		async eraseTx() {},
 	};
 	const attachment = {
@@ -67,6 +74,9 @@ function createHarness() {
 		File: { pathToFile: fileFor },
 		Server: { Endpoints: endpoints },
 		Libraries: { userLibraryID: 1 },
+		ItemFields: {
+			getID(name) { return name === "citationKey" ? 999 : false; },
+		},
 		Attachments: {
 			LINK_MODE_LINKED_FILE: 2,
 			async linkFromFile() {
@@ -76,7 +86,12 @@ function createHarness() {
 			},
 		},
 		DB: {
-			async columnQueryAsync() { return linked ? [attachment.id] : []; },
+			async columnQueryAsync(query, parameters) {
+				if (query.includes("itemDataValues")) {
+					return citationCollision && parameters[2] === "lovelace2026recognized" ? [999] : [];
+				}
+				return linked ? [attachment.id] : [];
+			},
 			async executeTransaction(callback) { return callback(); },
 		},
 		Items: {
@@ -106,7 +121,8 @@ function createHarness() {
 		vaultRoot,
 		pdfPath,
 		attachment,
-		counts: () => ({ linkCalls, recognizeCalls }),
+		counts: () => ({ linkCalls, recognizeCalls, citationSaveCalls }),
+		citationKey: () => citationKey,
 	};
 }
 
@@ -159,10 +175,53 @@ test("links and recognizes once, then reuses the existing child attachment", asy
 	assert.equal(first[0], 200);
 	assert.equal(JSON.parse(first[2]).alreadyImported, false);
 	assert.equal(harness.attachment.parentID, 2);
-	assert.deepEqual(harness.counts(), { linkCalls: 1, recognizeCalls: 1 });
+	assert.deepEqual(harness.counts(), { linkCalls: 1, recognizeCalls: 1, citationSaveCalls: 1 });
+	assert.equal(JSON.parse(first[2]).metadata.citationKey, "lovelace2026recognized");
 
 	const second = await new Import().init(request);
 	assert.equal(second[0], 200);
 	assert.equal(JSON.parse(second[2]).alreadyImported, true);
-	assert.deepEqual(harness.counts(), { linkCalls: 1, recognizeCalls: 1 });
+	assert.deepEqual(harness.counts(), { linkCalls: 1, recognizeCalls: 1, citationSaveCalls: 1 });
+});
+
+test("adds the Zotero item key when a generated citation key collides", async () => {
+	const harness = createHarness({ citationCollision: true });
+	const token = "d".repeat(64);
+	await harness.context.VaultBridge.startup({ version: "0.2.0" });
+
+	const Configure = harness.Zotero.Server.Endpoints["/zotero-vault-bridge/configure"];
+	await new Configure().init({
+		headers: { "x-zotero-vault-bridge-token": token },
+		data: { vaultRoot: harness.vaultRoot },
+	});
+	const Import = harness.Zotero.Server.Endpoints["/zotero-vault-bridge/import"];
+	const imported = await new Import().init({
+		headers: { "x-zotero-vault-bridge-token": token },
+		data: { path: harness.pdfPath },
+	});
+
+	assert.equal(imported[0], 200);
+	assert.equal(JSON.parse(imported[2]).metadata.citationKey, "lovelace2026recognized-item0001");
+	assert.equal(harness.citationKey(), "lovelace2026recognized-item0001");
+});
+
+test("preserves an existing Zotero citation key", async () => {
+	const harness = createHarness({ initialCitationKey: "customCitationKey" });
+	const token = "e".repeat(64);
+	await harness.context.VaultBridge.startup({ version: "0.2.0" });
+
+	const Configure = harness.Zotero.Server.Endpoints["/zotero-vault-bridge/configure"];
+	await new Configure().init({
+		headers: { "x-zotero-vault-bridge-token": token },
+		data: { vaultRoot: harness.vaultRoot },
+	});
+	const Import = harness.Zotero.Server.Endpoints["/zotero-vault-bridge/import"];
+	const imported = await new Import().init({
+		headers: { "x-zotero-vault-bridge-token": token },
+		data: { path: harness.pdfPath },
+	});
+
+	assert.equal(imported[0], 200);
+	assert.equal(JSON.parse(imported[2]).metadata.citationKey, "customCitationKey");
+	assert.equal(harness.counts().citationSaveCalls, 0);
 });

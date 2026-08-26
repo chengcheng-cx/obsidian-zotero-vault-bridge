@@ -14,3 +14,7 @@ test-vault/.obsidian/
 
 # Local PDFs are intentionally not committed
 test-vault/01_Papers/*.pdf
+
+# Generated Literature Notes may contain user bibliographic metadata and abstracts
+test-vault/02_Literature/*.md
+!test-vault/02_Literature/.gitkeep

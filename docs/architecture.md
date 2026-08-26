@@ -17,7 +17,8 @@ Responsibilities:
 - convert the Vault-relative path to an absolute desktop path;
 - pair with the local Companion using a random token;
 - persist per-PDF status in Obsidian plugin `data.json`;
-- expose explicit connection, scan, retry, and import commands.
+- create or update citation-key Literature Notes without overwriting user-authored bodies;
+- expose explicit connection, scan, retry, import, and Literature Note sync commands.
 
 The plugin never talks to `zotero.sqlite` and never sends a PDF body over HTTP.
 
@@ -31,6 +32,7 @@ Responsibilities:
 - create or reuse a `linked_file` attachment;
 - invoke Zotero 10's recognizer;
 - attach the PDF to the recognized bibliographic parent without renaming the Vault file;
+- generate and persist a deterministic citation key when the item has none;
 - return normalized metadata and Zotero keys.
 
 ## Import sequence
@@ -58,6 +60,10 @@ transactionally assign attachment.parentID
     ↓
 return itemKey + attachmentKey + metadata
     ↓
+persist/generate citationKey in Zotero
+    ↓
+render or update 02_Literature/<citationKey>.md
+    ↓
 persist complete state in Obsidian data.json
 ```
 
@@ -72,6 +78,14 @@ This is an internal API, not a stable Local API endpoint. The manifest therefore
 The Companion serializes concurrent requests per canonical file path. Before creating an attachment it queries Zotero for an existing non-deleted linked attachment with the same path. A recognized child returns its existing parent; an unrecognized top-level attachment is reused for a retry.
 
 The Obsidian state key is the Vault-relative path. A completed path is skipped during startup reconciliation.
+
+Milestone 2 extends completion to include a `literatureNote` path. Older completed records without that path are reconciled once: the Companion reuses the linked attachment and parent item, supplies a citation key, and Obsidian creates the missing note. Subsequent note syncs replace only managed top-level frontmatter fields. Unknown frontmatter fields and the Markdown body are preserved.
+
+## Citation keys
+
+When a Zotero item has no citation key, the Companion derives one from the first author, year, and first significant title word. It compares generated keys case-insensitively within the user library and appends the Zotero item key on collision. The value is saved on the Zotero item before it is returned to Obsidian.
+
+The implementation intentionally uses the already-paired Companion instead of requiring the Zotero Local API setting. This keeps authorization tied to the existing random bridge token and works when the user's Local API is disabled.
 
 ## Trust boundary
 

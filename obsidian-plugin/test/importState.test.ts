@@ -15,6 +15,13 @@ describe("ImportStateStore", () => {
 				status: "complete",
 				attempts: 1,
 				updatedAt: "2026-01-01T00:00:00.000Z",
+				literatureNote: "02_Literature/complete2026paper.md",
+			},
+			"01_Papers/missing-note.pdf": {
+				path: "01_Papers/missing-note.pdf",
+				status: "complete",
+				attempts: 1,
+				updatedAt: "2026-01-01T00:00:00.000Z",
 			},
 			"01_Papers/failed.pdf": {
 				path: "01_Papers/failed.pdf",
@@ -26,6 +33,7 @@ describe("ImportStateStore", () => {
 
 		expect(store.needsImport("01_Papers/processing.pdf", false)).toBe(true);
 		expect(store.needsImport("01_Papers/complete.pdf", true)).toBe(false);
+		expect(store.needsImport("01_Papers/missing-note.pdf", false)).toBe(true);
 		expect(store.needsImport("01_Papers/failed.pdf", false)).toBe(false);
 		expect(store.needsImport("01_Papers/failed.pdf", true)).toBe(true);
 	});

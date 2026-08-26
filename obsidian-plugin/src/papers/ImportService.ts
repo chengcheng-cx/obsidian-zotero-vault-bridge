@@ -3,6 +3,7 @@ import {
 	type App,
 	type TFile,
 } from "obsidian";
+import type { LiteratureNoteWriter } from "../literature/LiteratureNoteService";
 import type { BridgeSettings } from "../settings";
 import {
 	ZoteroBridgeClient,
@@ -23,13 +24,14 @@ export class ImportService {
 		private readonly app: App,
 		private readonly state: ImportStateStore,
 		private readonly client: ZoteroBridgeClient,
+		private readonly literatureNotes: LiteratureNoteWriter,
 		private readonly getSettings: () => BridgeSettings,
 		private readonly getVaultRoot: () => string,
 	) {}
 
 	async importFile(file: TFile, options: ImportOptions = {}): Promise<PaperRecord> {
 		let current = this.state.get(file.path);
-		if (current?.status === "complete" && !options.force) {
+		if (current?.status === "complete" && current.literatureNote && !options.force) {
 			return current;
 		}
 		let existing = this.inFlight.get(file.path);
@@ -71,6 +73,12 @@ export class ImportService {
 			await this.client.ensureConfigured(this.getVaultRoot());
 			let result = await this.client.importPdf(adapter.getFullPath(file.path));
 			await this.state.markRecognized(file.path, result);
+			let recognized = this.state.get(file.path);
+			if (!recognized) {
+				throw new Error("Zotero recognition completed without a persisted paper record.");
+			}
+			let note = await this.literatureNotes.createOrUpdate(file.path, recognized);
+			await this.state.markLiteratureNote(file.path, note.path);
 			await this.state.markComplete(file.path);
 			let record = this.state.get(file.path);
 			if (!record) {

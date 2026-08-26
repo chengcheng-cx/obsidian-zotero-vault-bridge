@@ -12,7 +12,7 @@ Status: implemented.
 
 ## Milestone 1 — PDF to Zotero recognition
 
-Status: implemented; manual Zotero acceptance test still required.
+Status: implemented; the normal-path manual test passed on Zotero 10.0.1, while the difficult-PDF failure/retry case remains a release check.
 
 - watcher plus startup reconciliation
 - stable-file wait and in-process deduplication
@@ -26,10 +26,10 @@ Exit criteria are defined in `acceptance-test.md`.
 
 ## Milestone 2 — citation key and Literature Note
 
-Status: planned.
+Status: implemented; manual acceptance passed on Zotero 10.0.1 and Obsidian 1.13.7.
 
 - generate a deterministic citation key when Zotero has none;
-- use Zotero 10 Local API authorization/write support to persist `citationKey`;
+- persist `citationKey` through the paired Companion because Zotero's Local API may be disabled;
 - create `02_Literature/<citationKey>.md` from `Templates/Literature.md`;
 - update frontmatter idempotently while preserving the user-owned note body;
 - add `zotero://select` and PDF links;
@@ -54,4 +54,6 @@ Status: planned.
 - cancellation and bounded recognition timeout UX;
 - signed/reproducible release artifacts;
 - update manifest and compatibility test matrix;
-- migrate repository visibility from private to public after stable MVP acceptance.
+- add automated secret scanning and reproducible GitHub releases.
+
+Repository visibility was changed to public after a full tracked-history privacy audit confirmed that PDFs, Obsidian runtime state, pairing tokens, secrets, and personal email addresses were never committed.

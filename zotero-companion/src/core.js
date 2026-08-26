@@ -71,11 +71,44 @@ var VaultBridgeCore = (function () {
 		return match ? match[1] : "";
 	}
 
+	function citationPart(value) {
+		return String(value || "")
+			.normalize("NFKD")
+			.replace(/\p{M}/gu, "")
+			.toLocaleLowerCase("en-US")
+			.match(/[\p{L}\p{N}]+/gu)
+			?.join("") || "";
+	}
+
+	function generateCitationKey(metadata, itemKey) {
+		let creators = Array.isArray(metadata?.creators) ? metadata.creators : [];
+		let firstAuthor = creators.find(creator => creator?.creatorType === "author") || creators[0] || {};
+		let author = citationPart(firstAuthor.lastName || firstAuthor.name || firstAuthor.firstName) || "anon";
+		let year = extractYear(metadata?.year || metadata?.date) || "nd";
+		let stopwords = new Set(["a", "an", "and", "for", "in", "of", "on", "the", "to", "using", "with"]);
+		let titleWords = String(metadata?.title || "").match(/[\p{L}\p{N}]+/gu) || [];
+		let title = titleWords
+			.map(citationPart)
+			.find(word => word && !stopwords.has(word))
+			|| "untitled";
+		let generated = Array.from(`${author}${year}${title}`).slice(0, 96).join("");
+		return generated || `item${citationPart(itemKey) || "unknown"}`;
+	}
+
+	function isSafeCitationKey(value) {
+		let candidate = String(value || "");
+		return /^[\p{L}\p{N}][\p{L}\p{N}._-]{0,127}$/u.test(candidate)
+			&& !/[. ]$/.test(candidate)
+			&& !/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(candidate);
+	}
+
 	return {
 		normalizePath,
 		isPathInsideRoot,
 		constantTimeEqual,
 		extractYear,
+		generateCitationKey,
+		isSafeCitationKey,
 	};
 })();
 

@@ -32,6 +32,12 @@ At the inspected Zotero source revision, `Zotero.RecognizeDocument._recognize(at
 
 Source: [`recognizeDocument.js` in the Zotero 10.0.1 release](https://github.com/zotero/zotero/blob/10.0.1/chrome/content/zotero/xpcom/recognizeDocument.js).
 
+## Citation-key persistence
+
+The Zotero Local API can be disabled by the user, including on a supported Zotero 10 installation. Literature Note creation therefore does not depend on Local API availability. The paired Companion generates a deterministic citation key, checks for collisions in the user library, writes the `citationKey` field on the existing bibliographic item, and returns the saved value in the authenticated import response.
+
+This does not add a remote service or a second credential: it reuses the localhost-only endpoint, pairing token, and Vault-root boundary already required for PDF import.
+
 ## Upgrade rule
 
 Do not increase `strict_max_version` merely because installation appears to work. For each new Zotero line:

@@ -1,6 +1,6 @@
 {
   "name": "obsidian-zotero-vault-bridge",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Keep PDFs in an Obsidian vault while Zotero 10 recognizes and manages their bibliographic metadata.",
   "homepage": "https://github.com/chengcheng-cx/obsidian-zotero-vault-bridge",

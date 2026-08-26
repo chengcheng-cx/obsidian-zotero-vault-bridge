@@ -70,6 +70,27 @@ export class PaperWatcher {
 		return result;
 	}
 
+	async syncLiteratureNotes(): Promise<ScanResult> {
+		let files = this.vault.getFiles().filter(file => this.isPaper(file));
+		let result: ScanResult = { discovered: files.length, imported: 0, failed: 0 };
+
+		for (let file of files) {
+			let record = this.state.get(file.path);
+			if (!record?.itemKey || !record.metadata) {
+				continue;
+			}
+			try {
+				await this.importer.importFile(file, { force: true });
+				result.imported += 1;
+			}
+			catch (error) {
+				result.failed += 1;
+				console.error(`Zotero Vault Bridge failed to sync ${file.path}`, error);
+			}
+		}
+		return result;
+	}
+
 	private isPaper(file: TFile): boolean {
 		return isPdfInFolder(file.path, file.extension, this.getSettings().papersFolder);
 	}

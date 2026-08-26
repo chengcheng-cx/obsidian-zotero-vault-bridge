@@ -1,6 +1,6 @@
 {
   "name": "@zvb/zotero-companion",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "private": true,
   "description": "Zotero 10 companion for Obsidian Zotero Vault Bridge.",
   "license": "MIT",
