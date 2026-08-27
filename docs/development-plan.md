@@ -47,7 +47,7 @@ Status: implemented; manual Obsidian/Zotero acceptance passed on Zotero 10.0.1 a
 
 ## Milestone 4 — hardening and release
 
-Status: implemented; desktop rename/relink acceptance passed on Zotero 10.0.1 and Obsidian 1.13.7, with final tagged-release verification pending.
+Status: released in `v0.4.0`; desktop rename/relink acceptance passed on Zotero 10.0.1 and Obsidian 1.13.7, and the complete tagged-release gate passed.
 
 - authenticated linked-file relocation/relink endpoint and Vault rename handling;
 - SHA-256/stat fingerprints, content-replacement recognition, and touch-only fast path;
