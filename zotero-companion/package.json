@@ -6,7 +6,7 @@
   "license": "MIT",
   "scripts": {
     "build": "node scripts/build.mjs",
-    "test": "node --test test/*.test.cjs"
+    "test": "node --test test/bridge.test.cjs test/core.test.cjs"
   },
   "devDependencies": {
     "archiver": "^7.0.1"
