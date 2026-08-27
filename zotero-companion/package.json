@@ -9,6 +9,6 @@
     "test": "node --test test/bridge.test.cjs test/core.test.cjs"
   },
   "devDependencies": {
-    "archiver": "^7.0.1"
+    "archiver": "^8.0.0"
   }
 }
