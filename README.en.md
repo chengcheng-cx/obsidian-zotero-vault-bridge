@@ -2,9 +2,9 @@
 
 [繁體中文](README.md) | English
 
-Keep the physical PDF inside an Obsidian Vault while Zotero 10 creates a linked attachment, runs native metadata recognition, and persists a citation key. Obsidian then creates an editable Literature Note and completes Pandoc citations.
+Keep the physical PDF inside an Obsidian Vault while Zotero 10 creates a linked attachment, runs native metadata recognition, and persists a citation key. Obsidian then creates an editable Literature Note and a clickable citation link, with plain Pandoc citations available as an option.
 
-Four installable milestones are implemented, including reliability and release hardening:
+Five installable milestones are implemented, including linked citations, reliability, and release hardening:
 
 ```text
 01_Papers/*.pdf
@@ -17,7 +17,7 @@ linked attachment → Zotero native recognition → citation key
         ↓
 02_Literature/<citationKey>.md
         ↓
-Markdown editor: [@ → Zotero search → [@citationKey]
+Markdown editor: [@ → Zotero search → clickable Literature Note link
 ```
 
 ## Requirements
@@ -45,7 +45,7 @@ npm run build
 Build outputs:
 
 - Obsidian: `obsidian-plugin/main.js`, `manifest.json`, and `styles.css`
-- Zotero: `zotero-companion/dist/zotero-vault-bridge-companion-0.4.0.xpi`
+- Zotero: `zotero-companion/dist/zotero-vault-bridge-companion-0.5.0.xpi`
 - Complete release: `dist/release/` (Obsidian ZIP, XPI, `updates.json`, and SHA-256 checksums)
 
 ## Install the Zotero Companion
@@ -82,7 +82,7 @@ Reload Obsidian, then enable `Zotero Vault Bridge` under `Settings → Community
 4. Put a PDF in `01_Papers/`, or open a PDF and run `Import active PDF`.
 5. The plugin creates or reuses a linked attachment in Zotero, recognizes its metadata, and persists a citation key.
 6. The Literature Note is created at `02_Literature/<citationKey>.md`.
-7. Type `[@` in any Markdown note to search Zotero and insert `[@citationKey]`.
+7. Type `[@` in any Markdown note to search Zotero and insert a Literature Note link displayed as `[@citationKey]`.
 
 For a quick acceptance run, open the included `test-vault` in Obsidian, start Zotero, run `Test connection`, and add one PDF you are allowed to use. A successful run shows a PDF child attachment under the Zotero bibliographic item, a note in `02_Literature/`, and `[@` suggestions in Markdown. See the [acceptance test](docs/acceptance-test.md) for success, failure, rename, and offline cases.
 
@@ -106,9 +106,11 @@ Available commands:
 ## Citation autocomplete
 
 - Type `[@` in the Markdown editor to search the entire Zotero user library by author, year, title, or citation key.
-- Use `↑`/`↓` to navigate, `Enter` to insert, and `Esc` to dismiss.
+- Use `↑`/`↓` to navigate, `Enter` to insert, and `Esc` to dismiss, or select a result with the mouse.
 - Searching is read-only; a missing citation key is confirmed and persisted only for the item you select.
-- The inserted form is a Pandoc citation: `[@citationKey]`.
+- By default, insertion creates a real Obsidian wikilink: `[[02_Literature/citationKey|[@citationKey]]]`. It is displayed as `[@citationKey]` and opens the Literature Note when clicked.
+- If the Literature Note does not exist yet, an `@citationKey` label safely links to the Zotero item through `zotero://select`. This avoids creating an empty note that would block a later managed sync.
+- Choose `Pandoc citation` under `Settings → Zotero Vault Bridge → Citation insertion format` to insert the original plain `[@citationKey]` text instead.
 - Search uses the paired Companion and works even when Zotero's Local API is disabled.
 
 ## PDF reliability
@@ -132,7 +134,7 @@ Available commands:
 
 - Zotero must remain open.
 - The note body is generated from the template only when the note is first created; later syncs intentionally preserve it.
-- Autocomplete currently targets a single `[@` trigger; combine multiple citations into a cluster manually after insertion.
+- Autocomplete currently targets a single `[@` trigger. In Pandoc mode, combine multiple citations into a cluster manually after insertion.
 
 See [architecture](docs/architecture.md), the [development plan](docs/development-plan.md), the [compatibility matrix](docs/compatibility.md), and the [acceptance test](docs/acceptance-test.md) for design and verification details.
 

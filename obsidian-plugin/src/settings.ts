@@ -5,6 +5,8 @@ import {
 	normalizePath,
 } from "obsidian";
 
+export type CitationInsertionMode = "literature-note-link" | "pandoc";
+
 export interface BridgeSettings {
 	papersFolder: string;
 	literatureFolder: string;
@@ -12,6 +14,7 @@ export interface BridgeSettings {
 	watchForNewPdfs: boolean;
 	scanOnStartup: boolean;
 	enableCitationAutocomplete: boolean;
+	citationInsertionMode: CitationInsertionMode;
 	zoteroEndpoint: string;
 	stablePollIntervalMs: number;
 	stableRequiredSamples: number;
@@ -26,6 +29,7 @@ export const DEFAULT_SETTINGS: BridgeSettings = {
 	watchForNewPdfs: true,
 	scanOnStartup: true,
 	enableCitationAutocomplete: true,
+	citationInsertionMode: "literature-note-link",
 	zoteroEndpoint: "http://localhost:23119",
 	stablePollIntervalMs: 750,
 	stableRequiredSamples: 3,
@@ -58,6 +62,9 @@ export function loadSettings(value: unknown): BridgeSettings {
 		enableCitationAutocomplete: typeof candidate.enableCitationAutocomplete === "boolean"
 			? candidate.enableCitationAutocomplete
 			: DEFAULT_SETTINGS.enableCitationAutocomplete,
+		citationInsertionMode: isCitationInsertionMode(candidate.citationInsertionMode)
+			? candidate.citationInsertionMode
+			: DEFAULT_SETTINGS.citationInsertionMode,
 		zoteroEndpoint: typeof candidate.zoteroEndpoint === "string"
 			? candidate.zoteroEndpoint.trim()
 			: DEFAULT_SETTINGS.zoteroEndpoint,
@@ -71,6 +78,10 @@ export function loadSettings(value: unknown): BridgeSettings {
 			600_000,
 		),
 	};
+}
+
+function isCitationInsertionMode(value: unknown): value is CitationInsertionMode {
+	return value === "literature-note-link" || value === "pandoc";
 }
 
 function positiveInteger(value: unknown, fallback: number): number {
@@ -101,7 +112,7 @@ export class BridgeSettingTab extends PluginSettingTab {
 		containerEl.empty();
 		containerEl.createEl("h2", { text: "Zotero Vault Bridge" });
 		containerEl.createEl("p", {
-			text: "Links and recognizes PDFs, creates Literature Notes, and completes Pandoc citations from Zotero.",
+			text: "Links and recognizes PDFs, creates Literature Notes, and inserts linked or Pandoc citations from Zotero.",
 			cls: "zotero-vault-bridge-settings-note",
 		});
 
@@ -149,6 +160,19 @@ export class BridgeSettingTab extends PluginSettingTab {
 			.addToggle(toggle => toggle
 				.setValue(this.host.settings.enableCitationAutocomplete)
 				.onChange(async value => this.host.updateSettings({ enableCitationAutocomplete: value })));
+
+		new Setting(containerEl)
+			.setName("Citation insertion format")
+			.setDesc("Insert a clickable Literature Note link displayed as [@key], or keep plain Pandoc citation text.")
+			.addDropdown(dropdown => dropdown
+				.addOption("literature-note-link", "Literature Note link")
+				.addOption("pandoc", "Pandoc citation")
+				.setValue(this.host.settings.citationInsertionMode)
+				.onChange(async value => {
+					if (isCitationInsertionMode(value)) {
+						await this.host.updateSettings({ citationInsertionMode: value });
+					}
+				}));
 
 		new Setting(containerEl)
 			.setName("Zotero endpoint")

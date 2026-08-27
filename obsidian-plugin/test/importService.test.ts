@@ -19,6 +19,7 @@ function settings(): BridgeSettings {
 		watchForNewPdfs: true,
 		scanOnStartup: true,
 		enableCitationAutocomplete: true,
+		citationInsertionMode: "literature-note-link",
 		zoteroEndpoint: "http://localhost:23119",
 		stablePollIntervalMs: 1,
 		stableRequiredSamples: 1,

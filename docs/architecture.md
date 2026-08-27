@@ -20,7 +20,7 @@ Responsibilities:
 - persist SHA-256/stat fingerprints and detect replaced content;
 - relink tracked Zotero attachments after Vault rename events;
 - create or update citation-key Literature Notes without overwriting user-authored bodies;
-- provide `[@` citation suggestions and insert Pandoc-compatible citations;
+- provide `[@` citation suggestions and insert clickable Literature Note links by default, with plain Pandoc citations as an option;
 - expose explicit connection, scan, retry, import, and Literature Note sync commands.
 
 The plugin never talks to `zotero.sqlite` and never sends a PDF body over HTTP.
@@ -101,7 +101,7 @@ The implementation intentionally uses the already-paired Companion instead of re
 
 Obsidian's `EditorSuggest` watches Markdown text immediately before the cursor for an unfinished `[@` trigger. It sends at most 200 query characters to an authenticated localhost search endpoint and displays no more than 20 matches. Results contain only the Zotero item key, citation key, title, authors, year, and `zotero://select` URI. DOM rendering uses text nodes rather than HTML.
 
-Search is read-only. The Companion derives a collision-checked preview key for display, but writes nothing until the user selects a result. Obsidian then resolves that item through a second authenticated endpoint; the Companion serializes citation-key allocation, persists the final key if needed, and returns it for insertion as `[@key]`. Before replacing the trigger, Obsidian verifies that the editor range is unchanged.
+Search is read-only. The Companion derives a collision-checked preview key for display, but writes nothing until the user selects a result. Obsidian then resolves that item through a second authenticated endpoint; the Companion serializes citation-key allocation, persists the final key if needed, and returns it for insertion. When the matching managed note exists, the default mode writes `[[<literatureFolder>/<key>|[@<key>]]]`, which keeps the citation label while creating a real Obsidian internal link. If no note exists, it writes `[@<key>](zotero://select/library/items/<itemKey>)` instead; this opens Zotero without creating an unmanaged empty note that would collide with later synchronization. A setting preserves the original plain Pandoc `[@key]` form. Before replacing the trigger, Obsidian verifies that the editor range is unchanged, validates the key and final link target, and calculates the final cursor position from the complete insertion.
 
 ## Rename and relink
 

@@ -1,12 +1,13 @@
 import {
 	EditorSuggest,
 	Notice,
+	TFile,
+	normalizePath,
 	type App,
 	type Editor,
 	type EditorPosition,
 	type EditorSuggestContext,
 	type EditorSuggestTriggerInfo,
-	type TFile,
 } from "obsidian";
 import type { BridgeSettings } from "../settings";
 import type { ZoteroBridgeClient } from "../zotero/ZoteroClient";
@@ -18,6 +19,7 @@ const ERROR_NOTICE_COOLDOWN_MS = 10_000;
 
 export class CitationSuggest extends EditorSuggest<CitationSearchItem> {
 	private lastErrorNoticeAt = 0;
+	private readonly bridgeApp: App;
 
 	constructor(
 		app: App,
@@ -25,6 +27,7 @@ export class CitationSuggest extends EditorSuggest<CitationSearchItem> {
 		private readonly getSettings: () => BridgeSettings,
 	) {
 		super(app);
+		this.bridgeApp = app;
 		this.limit = SEARCH_LIMIT;
 		this.setInstructions([
 			{ command: "↑↓", purpose: "navigate" },
@@ -99,12 +102,21 @@ export class CitationSuggest extends EditorSuggest<CitationSearchItem> {
 	): Promise<void> {
 		try {
 			let resolved = await this.client.resolveCitation(item.itemKey);
+			let settings = this.getSettings();
+			let notePath = normalizePath(`${settings.literatureFolder}/${resolved.citationKey}.md`);
+			let literatureNoteExists = this.bridgeApp.vault.getAbstractFileByPath(notePath) instanceof TFile;
 			if (!replaceCitationIfUnchanged(
 				context.editor,
 				context.start,
 				context.end,
 				expectedTrigger,
 				resolved.citationKey,
+				settings.citationInsertionMode,
+				settings.literatureFolder,
+				{
+					literatureNoteExists,
+					zoteroSelectUri: resolved.selectUri,
+				},
 			)) {
 				new Notice("Citation insertion was cancelled because the note changed.");
 				return;

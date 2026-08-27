@@ -98,3 +98,18 @@ Desktop evidence on Zotero 10.0.1 and Obsidian 1.13.7 (Windows 11): after instal
 Isolated automated evidence covers the non-destructive cases that should not be exercised against the user's library: touch-only fingerprint refresh makes zero Zotero calls; cancellation during the stability wait records `import_cancelled`; successful replacement removes the stale attachment and an idempotent retry does not recognize again; failed replacement preserves the original child and removes the temporary attachment; timeout retries share one pending recognition call.
 
 Release evidence for `v0.4.0`: all six Ubuntu/Windows and Node 20/22/24 compatibility jobs passed before publication. The release job then passed the full-history secret scan, dependency audit, tag/version check, two-build reproducibility check, SHA-256 verification, GitHub/Sigstore provenance step, and publication step. All seven published assets were downloaded and matched the local reproducible build byte-for-byte; the live `latest/updates.json` matched the tagged manifest; GitHub attestation verification bound both installable archives and all seven attested subjects to tag `v0.4.0` and commit `c91881bc59567473670622c856076d3847580c05`.
+
+## Milestone 5 — Clickable citation links
+
+1. Upgrade the Obsidian plugin to `0.5.0`, restart Obsidian, and confirm `Citation insertion format` defaults to `Literature Note link`.
+2. Type `[@` plus a query for an item with an existing `02_Literature/<citationKey>.md` note.
+3. Select the result with `Enter` and confirm the source contains exactly `[[02_Literature/<citationKey>|[@<citationKey>]]]`.
+4. Switch to Reading view, click the displayed `[@citationKey]`, and confirm Obsidian opens the matching Literature Note.
+5. Repeat insertion by clicking a suggestion with the mouse and confirm the same link form.
+6. Select `Pandoc citation` in plugin settings and confirm the same workflow inserts exactly `[@citationKey]`.
+7. Select an item without a Literature Note and confirm its `@citationKey` label links to the validated `zotero://select` URI instead of creating a dangling internal link.
+8. Confirm automated tests reject traversal, wikilink-control characters, or unsafe fallback URIs and still refuse stale asynchronous replacements.
+
+Milestone 5 passes when both keyboard and mouse selection create valid Literature Note links, link navigation opens the target note, and the Pandoc compatibility mode remains available.
+
+Verified on Zotero 10.0.1 and Obsidian 1.13.7 (Windows 11): keyboard selection created the exact wikilink for `abdelaty2025evaluation`, Reading view exposed it as an internal link, and clicking it opened `02_Literature/abdelaty2025evaluation.md`. Mouse selection independently created the exact link for `choi2023surrogate`. Unit coverage verifies internal and Zotero fallback links, Pandoc mode, cursor placement, unsafe target rejection, and stale-range cancellation.

@@ -57,3 +57,14 @@ Status: released in `v0.4.0`; desktop rename/relink acceptance passed on Zotero 
 - OS/Node CI matrix, full-history secret scanning, dependency audit, reproducible tagged releases, and signed GitHub/Sigstore build provenance.
 
 Repository visibility was changed to public after a full tracked-history privacy audit confirmed that PDFs, Obsidian runtime state, pairing tokens, secrets, and personal email addresses were never committed.
+
+## Milestone 5 — clickable citation links
+
+Status: implemented in `v0.5.0`; keyboard, mouse, and link-navigation acceptance passed on Zotero 10.0.1 and Obsidian 1.13.7.
+
+- keep the `[@` Zotero search trigger and citation-shaped label;
+- insert a real Literature Note wikilink by default;
+- link existing managed notes internally and fall back to a validated Zotero item link when no note exists;
+- preserve plain Pandoc `[@key]` insertion as a settings option;
+- validate link targets and retain the asynchronous stale-range guard;
+- cover linked and Pandoc output with regression tests.

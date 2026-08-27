@@ -237,7 +237,7 @@ test("links and recognizes once, then reuses the existing child attachment", asy
 test("recognizes replacement content with a new attachment and removes the stale attachment", async () => {
 	const harness = createHarness();
 	const token = "1".repeat(64);
-	await harness.context.VaultBridge.startup({ version: "0.4.0" });
+	await harness.context.VaultBridge.startup({ version: "0.5.0" });
 	const Configure = harness.Zotero.Server.Endpoints["/zotero-vault-bridge/configure"];
 	await new Configure().init({
 		headers: { "x-zotero-vault-bridge-token": token },
@@ -282,7 +282,7 @@ test("recognizes replacement content with a new attachment and removes the stale
 test("preserves the original child attachment when replacement recognition fails", async () => {
 	const harness = createHarness({ recognitionFailsOnCall: 2 });
 	const token = "4".repeat(64);
-	await harness.context.VaultBridge.startup({ version: "0.4.0" });
+	await harness.context.VaultBridge.startup({ version: "0.5.0" });
 	const Configure = harness.Zotero.Server.Endpoints["/zotero-vault-bridge/configure"];
 	await new Configure().init({
 		headers: { "x-zotero-vault-bridge-token": token },
@@ -313,7 +313,7 @@ test("preserves the original child attachment when replacement recognition fails
 test("relinks a tracked attachment after an Obsidian rename", async () => {
 	const harness = createHarness();
 	const token = "2".repeat(64);
-	await harness.context.VaultBridge.startup({ version: "0.4.0" });
+	await harness.context.VaultBridge.startup({ version: "0.5.0" });
 	const Configure = harness.Zotero.Server.Endpoints["/zotero-vault-bridge/configure"];
 	await new Configure().init({
 		headers: { "x-zotero-vault-bridge-token": token },
@@ -357,7 +357,7 @@ test("relinks a tracked attachment after an Obsidian rename", async () => {
 test("bounds recognition time while keeping one pending operation for retry", async () => {
 	const harness = createHarness({ recognitionDeferred: true, timeoutImmediately: true });
 	const token = "3".repeat(64);
-	await harness.context.VaultBridge.startup({ version: "0.4.0" });
+	await harness.context.VaultBridge.startup({ version: "0.5.0" });
 	const Configure = harness.Zotero.Server.Endpoints["/zotero-vault-bridge/configure"];
 	await new Configure().init({
 		headers: { "x-zotero-vault-bridge-token": token },
