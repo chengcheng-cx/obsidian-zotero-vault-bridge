@@ -18,3 +18,9 @@ test-vault/01_Papers/*.pdf
 # Generated Literature Notes may contain user bibliographic metadata and abstracts
 test-vault/02_Literature/*.md
 !test-vault/02_Literature/.gitkeep
+
+# Test notes and drafts are private runtime content
+test-vault/03_Notes/*.md
+!test-vault/03_Notes/.gitkeep
+test-vault/04_Drafts/*.md
+!test-vault/04_Drafts/.gitkeep

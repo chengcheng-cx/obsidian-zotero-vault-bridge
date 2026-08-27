@@ -1,9 +1,9 @@
 {
   "id": "zotero-vault-bridge",
   "name": "Zotero Vault Bridge",
-  "version": "0.2.0",
+  "version": "0.4.0",
   "minAppVersion": "1.8.0",
-  "description": "Keep PDFs in your vault while Zotero 10 recognizes metadata and Obsidian creates Literature Notes.",
+  "description": "Keep PDFs in your vault, create Literature Notes, and autocomplete Zotero citations.",
   "author": "Zotero Vault Bridge contributors",
   "isDesktopOnly": true
 }

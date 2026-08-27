@@ -3,7 +3,11 @@ import { normalizeLoopbackEndpoint } from "./endpoint";
 import type {
 	BridgeErrorPayload,
 	BridgeStatus,
+	CitationResolveResult,
+	CitationSearchItem,
+	CitationSearchResult,
 	ImportResult,
+	RelinkResult,
 } from "./ZoteroTypes";
 
 const TOKEN_HEADER = "X-Zotero-Vault-Bridge-Token";
@@ -57,12 +61,53 @@ export class ZoteroBridgeClient {
 		return after;
 	}
 
-	async importPdf(absolutePath: string): Promise<ImportResult> {
+	async importPdf(
+		absolutePath: string,
+		options: {
+			replaceExisting: boolean;
+			recognitionTimeoutMs: number;
+			expectedAttachmentKey?: string;
+		},
+	): Promise<ImportResult> {
 		return this.request<ImportResult>(
 			"/zotero-vault-bridge/import",
 			"POST",
-			{ path: absolutePath },
+			{ path: absolutePath, ...options },
 		);
+	}
+
+	async relinkPdf(
+		oldAbsolutePath: string,
+		newAbsolutePath: string,
+		attachmentKey: string,
+	): Promise<RelinkResult> {
+		return this.request<RelinkResult>(
+			"/zotero-vault-bridge/relink",
+			"POST",
+			{
+				oldPath: oldAbsolutePath,
+				newPath: newAbsolutePath,
+				attachmentKey,
+			},
+		);
+	}
+
+	async searchCitations(query: string, limit = 20): Promise<CitationSearchItem[]> {
+		let result = await this.request<CitationSearchResult>(
+			"/zotero-vault-bridge/citations/search",
+			"POST",
+			{ query, limit },
+		);
+		return result.items;
+	}
+
+	async resolveCitation(itemKey: string): Promise<CitationSearchItem> {
+		let result = await this.request<CitationResolveResult>(
+			"/zotero-vault-bridge/citations/resolve",
+			"POST",
+			{ itemKey },
+		);
+		return result.item;
 	}
 
 	private async request<T>(route: string, method: "GET" | "POST", body?: object): Promise<T> {

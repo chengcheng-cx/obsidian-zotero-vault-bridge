@@ -7,6 +7,7 @@ export interface StabilityOptions {
 	pollIntervalMs: number;
 	requiredSamples: number;
 	timeoutMs: number;
+	signal?: AbortSignal;
 }
 
 export class FileStabilityTimeoutError extends Error {
@@ -28,6 +29,7 @@ export async function waitForStableFile(
 	let stableSamples = 0;
 
 	while (now() - startedAt <= options.timeoutMs) {
+		options.signal?.throwIfAborted();
 		let current = await readStat();
 		if (current && current.size > 0) {
 			if (previous && current.size === previous.size && current.mtime === previous.mtime) {
@@ -46,6 +48,7 @@ export async function waitForStableFile(
 			stableSamples = 0;
 		}
 		await delay(options.pollIntervalMs);
+		options.signal?.throwIfAborted();
 	}
 
 	throw new FileStabilityTimeoutError();

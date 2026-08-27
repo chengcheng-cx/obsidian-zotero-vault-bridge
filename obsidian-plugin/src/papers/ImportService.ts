@@ -12,13 +12,31 @@ import {
 import type { PaperRecord } from "./ImportState";
 import { ImportStateStore } from "./ImportState";
 import { waitForStableFile } from "./fileStability";
+import {
+	sameFileContent,
+	sameFileStat,
+	sha256Hex,
+	type FileFingerprint,
+} from "./fingerprint";
 
 export interface ImportOptions {
 	force?: boolean;
 }
 
+interface InFlightImport {
+	controller: AbortController;
+	promise: Promise<PaperRecord>;
+}
+
+export class ImportCancelledError extends Error {
+	constructor() {
+		super("The PDF import was cancelled. Retry it when you are ready.");
+		this.name = "ImportCancelledError";
+	}
+}
+
 export class ImportService {
-	private readonly inFlight = new Map<string, Promise<PaperRecord>>();
+	private readonly inFlight = new Map<string, InFlightImport>();
 
 	constructor(
 		private readonly app: App,
@@ -30,71 +48,223 @@ export class ImportService {
 	) {}
 
 	async importFile(file: TFile, options: ImportOptions = {}): Promise<PaperRecord> {
-		let current = this.state.get(file.path);
-		if (current?.status === "complete" && current.literatureNote && !options.force) {
-			return current;
+		return this.importPath(file.path, options);
+	}
+
+	private async importPath(path: string, options: ImportOptions = {}): Promise<PaperRecord> {
+		let current = this.state.get(path);
+		if (current?.status === "complete" && current.literatureNote && current.fingerprint && !options.force) {
+			let stat = await this.requireFileSystemAdapter().stat(path);
+			if (stat && sameFileStat(current.fingerprint, stat)) {
+				return current;
+			}
 		}
-		let existing = this.inFlight.get(file.path);
+		let existing = this.inFlight.get(path);
 		if (existing) {
-			return existing;
+			return existing.promise;
 		}
 
-		let operation = this.runImport(file);
-		this.inFlight.set(file.path, operation);
+		let controller = new AbortController();
+		let operation = this.runImport(path, options, controller.signal);
+		this.inFlight.set(path, { controller, promise: operation });
 		try {
 			return await operation;
 		}
 		finally {
-			this.inFlight.delete(file.path);
+			this.inFlight.delete(path);
 		}
 	}
 
-	private async runImport(file: TFile): Promise<PaperRecord> {
-		if (!this.state.get(file.path)) {
-			await this.state.markNew(file.path);
+	cancelAll(): number {
+		let cancelled = 0;
+		for (let operation of this.inFlight.values()) {
+			if (!operation.controller.signal.aborted) {
+				operation.controller.abort();
+				cancelled += 1;
+			}
 		}
-		await this.state.markProcessing(file.path);
+		return cancelled;
+	}
+
+	async relinkFile(file: TFile, oldPath: string): Promise<PaperRecord> {
+		let newPath = file.path;
+		let active = this.inFlight.get(oldPath);
+		if (active) {
+			await active.promise.catch(() => undefined);
+		}
+
+		let existing = this.state.get(oldPath);
+		if (!existing) {
+			return this.importPath(newPath);
+		}
+		if (oldPath !== newPath && this.state.get(newPath)) {
+			throw new Error(`Cannot relink paper state onto an existing record: ${newPath}`);
+		}
+
+		let adapter = this.requireFileSystemAdapter();
+		let settings = this.getSettings();
+		let fingerprint = await this.fingerprintFile(adapter, newPath, settings, new AbortController().signal);
+		let contentChanged = Boolean(existing.fingerprint
+			&& !sameFileContent(existing.fingerprint, fingerprint));
+		let canRelinkWithoutImport = Boolean(
+			!contentChanged
+			&& existing.attachmentKey
+			&& existing.status === "complete"
+			&& existing.metadata,
+		);
+
+		if (existing.attachmentKey) {
+			await this.client.ensureConfigured(this.getVaultRoot());
+			await this.client.relinkPdf(
+				adapter.getFullPath(oldPath),
+				adapter.getFullPath(newPath),
+				existing.attachmentKey,
+			);
+		}
+
+		let moved = await this.state.move(
+			oldPath,
+			newPath,
+			contentChanged ? undefined : fingerprint,
+			canRelinkWithoutImport ? "recognized" : undefined,
+		);
+		if (!canRelinkWithoutImport) {
+			return this.importPath(newPath, { force: true });
+		}
+
+		let note = await this.literatureNotes.createOrUpdate(newPath, moved);
+		await this.state.markLiteratureNote(newPath, note.path);
+		await this.state.markComplete(newPath);
+		let completed = this.state.get(newPath);
+		if (!completed) {
+			throw new Error("Relink completed without a persisted paper record.");
+		}
+		return completed;
+	}
+
+	private async runImport(
+		path: string,
+		options: ImportOptions,
+		signal: AbortSignal,
+	): Promise<PaperRecord> {
+		let initial = this.state.get(path);
+		let beganProcessing = false;
+		if (!initial) {
+			await this.state.markNew(path);
+		}
 
 		try {
 			let adapter = this.requireFileSystemAdapter();
 			let settings = this.getSettings();
-			await waitForStableFile(
-				async () => {
-					let stat = await adapter.stat(file.path);
-					return stat ? { size: stat.size, mtime: stat.mtime } : null;
-				},
-				{
-					pollIntervalMs: settings.stablePollIntervalMs,
-					requiredSamples: settings.stableRequiredSamples,
-					timeoutMs: settings.stableTimeoutMs,
-				},
-			);
+			let fingerprint = await this.fingerprintFile(adapter, path, settings, signal);
+			this.throwIfCancelled(signal);
 
-			await this.client.ensureConfigured(this.getVaultRoot());
-			let result = await this.client.importPdf(adapter.getFullPath(file.path));
-			await this.state.markRecognized(file.path, result);
-			let recognized = this.state.get(file.path);
+			if (initial?.status === "complete"
+					&& initial.literatureNote
+					&& sameFileContent(initial.fingerprint, fingerprint)
+					&& !options.force) {
+				await this.state.updateFingerprint(path, fingerprint);
+				let untouched = this.state.get(path);
+				if (!untouched) throw new Error("Fingerprint update lost the paper record.");
+				return untouched;
+			}
+
+			let replacement = Boolean(initial?.fingerprint
+				&& !sameFileContent(initial.fingerprint, fingerprint));
+			await this.state.markProcessing(path);
+			beganProcessing = true;
+
+			await this.raceWithCancellation(
+				this.client.ensureConfigured(this.getVaultRoot()),
+				signal,
+			);
+			let result = await this.raceWithCancellation(
+				this.client.importPdf(adapter.getFullPath(path), {
+					replaceExisting: replacement,
+					recognitionTimeoutMs: settings.recognitionTimeoutMs,
+					expectedAttachmentKey: replacement ? initial?.attachmentKey : undefined,
+				}),
+				signal,
+			);
+			this.throwIfCancelled(signal);
+			await this.state.markRecognized(path, result, fingerprint);
+			let recognized = this.state.get(path);
 			if (!recognized) {
 				throw new Error("Zotero recognition completed without a persisted paper record.");
 			}
-			let note = await this.literatureNotes.createOrUpdate(file.path, recognized);
-			await this.state.markLiteratureNote(file.path, note.path);
-			await this.state.markComplete(file.path);
-			let record = this.state.get(file.path);
+			let note = await this.literatureNotes.createOrUpdate(path, recognized);
+			await this.state.markLiteratureNote(path, note.path);
+			await this.state.markComplete(path);
+			let record = this.state.get(path);
 			if (!record) {
 				throw new Error("Import completed without a persisted paper record.");
 			}
 			return record;
 		}
 		catch (error) {
-			let code = error instanceof ZoteroBridgeClientError
-				? error.code
-				: error instanceof Error
-					? error.name
-					: "unknown_error";
-			let message = error instanceof Error ? error.message : "Unknown import error.";
-			await this.state.markFailed(file.path, code, message);
-			throw error;
+			let normalizedError = signal.aborted ? new ImportCancelledError() : error;
+			let code = normalizedError instanceof ZoteroBridgeClientError
+				? normalizedError.code
+				: normalizedError instanceof ImportCancelledError
+					? "import_cancelled"
+					: normalizedError instanceof Error
+						? normalizedError.name
+						: "unknown_error";
+			let message = normalizedError instanceof Error
+				? normalizedError.message
+				: "Unknown import error.";
+			if (normalizedError instanceof ImportCancelledError || beganProcessing || !initial) {
+				await this.state.markFailed(path, code, message);
+			}
+			throw normalizedError;
+		}
+	}
+
+	private async fingerprintFile(
+		adapter: FileSystemAdapter,
+		path: string,
+		settings: BridgeSettings,
+		signal: AbortSignal,
+	): Promise<FileFingerprint> {
+		for (let attempt = 0; attempt < 3; attempt += 1) {
+			let stable = await waitForStableFile(
+				async () => {
+					let stat = await adapter.stat(path);
+					return stat ? { size: stat.size, mtime: stat.mtime } : null;
+				},
+				{
+					pollIntervalMs: settings.stablePollIntervalMs,
+					requiredSamples: settings.stableRequiredSamples,
+					timeoutMs: settings.stableTimeoutMs,
+					signal,
+				},
+			);
+			let content = await this.raceWithCancellation(adapter.readBinary(path), signal);
+			let sha256 = await this.raceWithCancellation(sha256Hex(content), signal);
+			let after = await adapter.stat(path);
+			if (after && sameFileStat(stable, after)) {
+				return { size: after.size, mtime: after.mtime, sha256 };
+			}
+		}
+		throw new Error("The PDF kept changing while its content fingerprint was being calculated.");
+	}
+
+	private raceWithCancellation<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
+		if (signal.aborted) {
+			return Promise.reject(new ImportCancelledError());
+		}
+		return new Promise<T>((resolve, reject) => {
+			let onAbort = () => reject(new ImportCancelledError());
+			signal.addEventListener("abort", onAbort, { once: true });
+			operation.then(resolve, reject).finally(() => {
+				signal.removeEventListener("abort", onAbort);
+			});
+		});
+	}
+
+	private throwIfCancelled(signal: AbortSignal): void {
+		if (signal.aborted) {
+			throw new ImportCancelledError();
 		}
 	}
 

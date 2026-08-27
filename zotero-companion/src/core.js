@@ -102,6 +102,50 @@ var VaultBridgeCore = (function () {
 			&& !/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(candidate);
 	}
 
+	function normalizeSearchText(value) {
+		return String(value || "")
+			.normalize("NFKD")
+			.replace(/\p{M}/gu, "")
+			.toLocaleLowerCase("en-US")
+			.replace(/[^\p{L}\p{N}]+/gu, " ")
+			.trim()
+			.replace(/\s+/g, " ");
+	}
+
+	function citationSearchScore(entry, query) {
+		let normalizedQuery = normalizeSearchText(query);
+		if (!normalizedQuery) {
+			return 0;
+		}
+		let title = normalizeSearchText(entry?.title);
+		let authors = normalizeSearchText(Array.isArray(entry?.authors) ? entry.authors.join(" ") : "");
+		let year = normalizeSearchText(entry?.year);
+		let citationKey = normalizeSearchText(entry?.citationKey);
+		let haystack = `${citationKey} ${authors} ${year} ${title}`;
+		let terms = normalizedQuery.split(" ").filter(Boolean);
+		if (!terms.every(term => haystack.includes(term))) {
+			return -1;
+		}
+
+		let compactQuery = normalizedQuery.replace(/\s/g, "");
+		let compactKey = citationKey.replace(/\s/g, "");
+		let score = 100;
+		if (compactKey === compactQuery) score += 1_000;
+		else if (compactKey.startsWith(compactQuery)) score += 700;
+		if (authors.startsWith(normalizedQuery)) score += 500;
+		else if (authors.includes(normalizedQuery)) score += 300;
+		if (title.startsWith(normalizedQuery)) score += 400;
+		else if (title.includes(normalizedQuery)) score += 200;
+		if (year === normalizedQuery) score += 150;
+		return score;
+	}
+
+	function recognitionTimeout(value) {
+		let parsed = Number(value);
+		if (!Number.isInteger(parsed)) return 120_000;
+		return Math.max(10_000, Math.min(600_000, parsed));
+	}
+
 	return {
 		normalizePath,
 		isPathInsideRoot,
@@ -109,6 +153,9 @@ var VaultBridgeCore = (function () {
 		extractYear,
 		generateCitationKey,
 		isSafeCitationKey,
+		normalizeSearchText,
+		citationSearchScore,
+		recognitionTimeout,
 	};
 })();
 

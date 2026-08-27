@@ -4,6 +4,7 @@ import {
 	Plugin,
 	TFile,
 } from "obsidian";
+import { CitationSuggest } from "./citations/CitationSuggest";
 import { LiteratureNoteService } from "./literature/LiteratureNoteService";
 import { ImportService } from "./papers/ImportService";
 import { ImportStateStore, type PaperRecords } from "./papers/ImportState";
@@ -75,9 +76,18 @@ export default class ZoteroVaultBridgePlugin extends Plugin implements SettingsH
 		);
 
 		this.addSettingTab(new BridgeSettingTab(this.app, this));
+		this.registerEditorSuggest(new CitationSuggest(
+			this.app,
+			this.client,
+			() => this.settings,
+		));
 		this.addCommands();
 		this.watcher.start();
 		await this.persist();
+	}
+
+	onunload(): void {
+		this.importer?.cancelAll();
 	}
 
 	async updateSettings(patch: Partial<BridgeSettings>): Promise<void> {
@@ -156,6 +166,17 @@ export default class ZoteroVaultBridgePlugin extends Plugin implements SettingsH
 			id: "sync-literature-notes",
 			name: "Sync all Literature Notes",
 			callback: () => void this.syncLiteratureNotes(),
+		});
+
+		this.addCommand({
+			id: "cancel-pending-imports",
+			name: "Cancel pending PDF imports",
+			callback: () => {
+				let cancelled = this.importer.cancelAll();
+				new Notice(cancelled
+					? `Cancelled ${cancelled} pending PDF import${cancelled === 1 ? "" : "s"}.`
+					: "No PDF imports are currently pending.");
+			},
 		});
 
 		this.addCommand({

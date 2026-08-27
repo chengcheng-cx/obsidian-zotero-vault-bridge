@@ -61,3 +61,38 @@ Milestone 1 passes only when both success and failure/retry paths behave as desc
 Milestone 2 passes only when Zotero citation-key persistence, note creation, preservation, and collision behavior all succeed on the declared versions.
 
 Verified on Zotero 10.0.1 and Obsidian 1.13.7: seven completed imports produced seven unique Literature Notes; two consecutive synchronization runs preserved the custom frontmatter field and user-owned body byte-for-byte and created no duplicate notes. The difficult PDF remained in the expected failed-recognition state.
+
+## Milestone 3 — `[@` citation autocomplete
+
+1. Upgrade both plugins to `0.3.0` and restart Zotero and Obsidian.
+2. Open a disposable Markdown note and type `[@` followed by part of an author, year, title, or citation key.
+3. Confirm the suggestion list shows title, author/year, and citation key from the Zotero user library.
+4. Use only `↓`, `↑`, `Enter`, and `Esc` to navigate, select, and dismiss suggestions.
+5. Select an item that already has a citation key and confirm Obsidian inserts exactly `[@citationKey]`.
+6. Select an item without a citation key and confirm Zotero persists the displayed collision-safe key only after selection.
+7. Change the trigger text while resolution is pending and confirm the plugin refuses to replace the changed range.
+8. Stop Zotero, type another trigger, and confirm Obsidian reports an actionable local-connection error without modifying the note.
+
+Milestone 3 passes only when search, keyboard operation, selected-item persistence, exact insertion, stale-range cancellation, and offline failure behavior all succeed on the declared versions.
+
+Verified on Zotero 10.0.1 and Obsidian 1.13.7: author/title search opened the keyboard-navigable popup; `Esc` preserved the trigger; `Enter` inserted an existing key exactly; selecting an item without a key persisted the displayed collision-safe key and inserted it; closing Zotero preserved the trigger and showed an actionable unavailable notice. The exact stale-range guard is covered by a unit test that changes the range before insertion and asserts that no replacement occurs.
+
+## Milestone 4 — Reliability and release
+
+1. Upgrade both plugins to `0.4.0`, restart both apps, and verify authenticated status reports no pending import.
+2. Rename a completed PDF inside the Vault. Confirm the persisted state key, Literature Note PDF link, and Zotero linked-attachment path all move to the new path without creating an item or attachment.
+3. Rename it back and confirm the same invariants in reverse.
+4. Change only a PDF's modification time. Scan and confirm the SHA-256 remains the same and Zotero recognition is not called.
+5. In an isolated test profile, replace a tracked path with different PDF content. Confirm a new attachment is recognized first, the stale attachment is removed only after success, the state fingerprint changes, and the Literature Note updates.
+6. Repeat replacement with deliberately unrecognizable content. Confirm the original child attachment remains and the temporary replacement attachment is cleaned up.
+7. Exercise `Cancel pending PDF imports` during stability wait and confirm an actionable `import_cancelled` state that can be retried.
+8. Force recognition past its configured wait limit. Confirm HTTP 504 `recognition_timeout`, one pending operation in status, and no duplicate recognition call on retry.
+9. Run `npm run verify:reproducible`; both complete builds must be byte-for-byte identical.
+10. Validate `dist/release/updates.json`, verify every line of `SHA256SUMS.txt`, and install the packaged Obsidian ZIP/XPI.
+11. Push a tag and require CI, secret scan, dependency audit, checksum verification, signed provenance attestation, and GitHub release publication to succeed.
+
+Milestone 4 passes when runtime rename/relink succeeds on the declared desktop versions, replacement/timeout/cancellation invariants pass their isolated harnesses, release artifacts reproduce exactly, and the tagged release and security workflows are green.
+
+Desktop evidence on Zotero 10.0.1 and Obsidian 1.13.7 (Windows 11): after installing both `0.4.0` builds, authenticated status reported zero pending imports. One completed tracked PDF was renamed inside Obsidian and then renamed back. In both directions, the persisted state key moved, the Literature Note wikilink changed, the physical SHA-256 stayed identical, and the authenticated attachment verifier reported both `matches: true` and `attached: true`. The attachment key stayed unchanged, no replacement recognition ran, zero pending imports remained, and all seven completed records stayed complete.
+
+Isolated automated evidence covers the non-destructive cases that should not be exercised against the user's library: touch-only fingerprint refresh makes zero Zotero calls; cancellation during the stability wait records `import_cancelled`; successful replacement removes the stale attachment and an idempotent retry does not recognize again; failed replacement preserves the original child and removes the temporary attachment; timeout retries share one pending recognition call. Release reproducibility, checksums, tagged workflows, and attestation remain final release gates rather than desktop-library tests.

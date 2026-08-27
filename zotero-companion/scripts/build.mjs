@@ -1,6 +1,6 @@
 import archiver from "archiver";
 import { createWriteStream } from "node:fs";
-import { cp, mkdir, readFile, rm } from "node:fs/promises";
+import { cp, mkdir, readFile, readdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -10,6 +10,7 @@ const sourceDirectory = path.join(packageDirectory, "src");
 const distributionDirectory = path.join(packageDirectory, "dist");
 const packageJson = JSON.parse(await readFile(path.join(packageDirectory, "package.json"), "utf8"));
 const manifest = JSON.parse(await readFile(path.join(sourceDirectory, "manifest.json"), "utf8"));
+const fixedArchiveDate = new Date("1980-01-01T00:00:00.000Z");
 
 if (manifest.version !== packageJson.version) {
 	throw new Error(`Version mismatch: package.json=${packageJson.version}, manifest.json=${manifest.version}`);
@@ -36,7 +37,10 @@ const outputPath = path.join(
 	`zotero-vault-bridge-companion-${packageJson.version}.xpi`,
 );
 const output = createWriteStream(outputPath);
-const archive = archiver("zip", { zlib: { level: 9 } });
+const archive = archiver("zip", {
+	forceLocalTime: false,
+	zlib: { level: 9 },
+});
 
 const completed = new Promise((resolve, reject) => {
 	output.on("close", resolve);
@@ -45,8 +49,29 @@ const completed = new Promise((resolve, reject) => {
 });
 
 archive.pipe(output);
-archive.directory(sourceDirectory, false);
+for (let relativePath of await collectFiles(sourceDirectory)) {
+	archive.append(await readFile(path.join(sourceDirectory, relativePath)), {
+		name: relativePath.replaceAll(path.sep, "/"),
+		date: fixedArchiveDate,
+		mode: 0o644,
+	});
+}
 await archive.finalize();
 await completed;
 
 process.stdout.write(`${outputPath}\n`);
+
+async function collectFiles(directory, prefix = "") {
+	let files = [];
+	let entries = await readdir(path.join(directory, prefix), { withFileTypes: true });
+	for (let entry of entries.sort((left, right) => left.name.localeCompare(right.name, "en"))) {
+		let relativePath = path.join(prefix, entry.name);
+		if (entry.isDirectory()) {
+			files.push(...await collectFiles(directory, relativePath));
+		}
+		else if (entry.isFile()) {
+			files.push(relativePath);
+		}
+	}
+	return files;
+}

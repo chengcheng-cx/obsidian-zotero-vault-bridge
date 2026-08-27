@@ -33,12 +33,24 @@ export class PaperWatcher {
 			}
 		}));
 
-		this.plugin.registerEvent(this.vault.on("rename", file => {
-			if (!(file instanceof TFile) || !this.getSettings().watchForNewPdfs) {
+		this.plugin.registerEvent(this.vault.on("rename", (file, oldPath) => {
+			if (!(file instanceof TFile)) {
 				return;
 			}
-			if (this.isPaper(file)) {
-				void this.importer.importFile(file).catch(error => console.error("Zotero Vault Bridge import failed", error));
+			if (!this.state.get(oldPath)
+					&& (!this.getSettings().watchForNewPdfs || !this.isPaper(file))) {
+				return;
+			}
+			void this.handleRename(file, oldPath).catch(error => console.error("Zotero Vault Bridge relink failed", error));
+		}));
+
+		this.plugin.registerEvent(this.vault.on("modify", file => {
+			if (!(file instanceof TFile)) {
+				return;
+			}
+			if (this.isPaper(file)
+					&& (this.state.get(file.path) || this.getSettings().watchForNewPdfs)) {
+				void this.importer.importFile(file).catch(error => console.error("Zotero Vault Bridge replacement check failed", error));
 			}
 		}));
 
@@ -55,7 +67,7 @@ export class PaperWatcher {
 		let result: ScanResult = { discovered: files.length, imported: 0, failed: 0 };
 
 		for (let file of files) {
-			if (!this.state.needsImport(file.path, includeFailed)) {
+			if (!this.state.needsImport(file.path, includeFailed, file.stat)) {
 				continue;
 			}
 			try {
@@ -68,6 +80,16 @@ export class PaperWatcher {
 			}
 		}
 		return result;
+	}
+
+	private async handleRename(file: TFile, oldPath: string): Promise<void> {
+		if (this.state.get(oldPath)) {
+			await this.importer.relinkFile(file, oldPath);
+			return;
+		}
+		if (this.isPaper(file)) {
+			await this.importer.importFile(file);
+		}
 	}
 
 	async syncLiteratureNotes(): Promise<ScanResult> {

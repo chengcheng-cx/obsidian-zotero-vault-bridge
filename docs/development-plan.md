@@ -12,7 +12,7 @@ Status: implemented.
 
 ## Milestone 1 — PDF to Zotero recognition
 
-Status: implemented; the normal-path manual test passed on Zotero 10.0.1, while the difficult-PDF failure/retry case remains a release check.
+Status: implemented; normal and difficult-PDF failure/retry acceptance passed on Zotero 10.0.1.
 
 - watcher plus startup reconciliation
 - stable-file wait and in-process deduplication
@@ -37,23 +37,23 @@ Status: implemented; manual acceptance passed on Zotero 10.0.1 and Obsidian 1.13
 
 ## Milestone 3 — `[@` citation autocomplete
 
-Status: planned.
+Status: implemented; manual Obsidian/Zotero acceptance passed on Zotero 10.0.1 and Obsidian 1.13.7.
 
-- CodeMirror 6 suggestion source triggered by `[@`;
-- search top-level Zotero items through the Local API;
+- Obsidian `EditorSuggest` source triggered by `[@`;
+- search top-level Zotero items through authenticated Companion endpoints;
 - display author, year, title, and citation key;
 - insert Pandoc-compatible `[@key]` text;
 - keyboard-only selection and cancellation tests.
 
 ## Milestone 4 — hardening and release
 
-Status: planned.
+Status: implemented; desktop rename/relink acceptance passed on Zotero 10.0.1 and Obsidian 1.13.7, with final tagged-release verification pending.
 
-- linked-file relocation/relink endpoint;
-- file fingerprint and replacement handling;
-- cancellation and bounded recognition timeout UX;
-- signed/reproducible release artifacts;
-- update manifest and compatibility test matrix;
-- add automated secret scanning and reproducible GitHub releases.
+- authenticated linked-file relocation/relink endpoint and Vault rename handling;
+- SHA-256/stat fingerprints, content-replacement recognition, and touch-only fast path;
+- cancel command plus bounded recognition timeout that keeps one reusable pending operation;
+- deterministic Obsidian ZIP and Companion XPI with SHA-256 release manifest;
+- generated Zotero `updates.json` and documented compatibility matrix;
+- OS/Node CI matrix, full-history secret scanning, dependency audit, reproducible tagged releases, and signed GitHub/Sigstore build provenance.
 
 Repository visibility was changed to public after a full tracked-history privacy audit confirmed that PDFs, Obsidian runtime state, pairing tokens, secrets, and personal email addresses were never committed.

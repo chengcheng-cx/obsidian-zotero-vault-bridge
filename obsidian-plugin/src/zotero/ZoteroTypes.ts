@@ -4,6 +4,7 @@ export interface BridgeStatus {
 	zoteroVersion: string;
 	configured: boolean;
 	authenticated: boolean;
+	pendingImports: number;
 }
 
 export interface ZoteroCreator {
@@ -29,10 +30,38 @@ export interface RecognizedMetadata {
 export interface ImportResult {
 	success: true;
 	alreadyImported: boolean;
+	replacedExisting: boolean;
 	itemKey: string;
 	attachmentKey: string;
 	metadata: RecognizedMetadata;
 	selectUri: string;
+}
+
+export interface RelinkResult {
+	success: true;
+	attachmentKey: string;
+	itemKey: string;
+	oldPath: string;
+	newPath: string;
+}
+
+export interface CitationSearchItem {
+	itemKey: string;
+	citationKey: string;
+	title: string;
+	authors: string[];
+	year: string;
+	selectUri: string;
+}
+
+export interface CitationSearchResult {
+	success: true;
+	items: CitationSearchItem[];
+}
+
+export interface CitationResolveResult {
+	success: true;
+	item: CitationSearchItem;
 }
 
 export interface BridgeErrorPayload {

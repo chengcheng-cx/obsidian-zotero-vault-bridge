@@ -26,6 +26,8 @@ Source: [`server.js` in the Zotero 10.0.1 release](https://github.com/zotero/zot
 
 Source: [`attachments.js` in the Zotero 10.0.1 release](https://github.com/zotero/zotero/blob/10.0.1/chrome/content/zotero/xpcom/attachments.js).
 
+For an Obsidian rename, Zotero 10.0.1 exposes the linked-file path through `attachment.attachmentPath`. The Companion saves a new absolute path only after authenticating the request, checking both Vault-root boundaries, matching the stored attachment key and previous path, and ruling out a destination collision.
+
 ## Native recognition
 
 At the inspected Zotero source revision, `Zotero.RecognizeDocument._recognize(attachment)` extracts PDF recognizer data, queries Zotero's recognition service, and creates a bibliographic item. The public queue method then assigns the attachment parent and may rename the file. The Companion calls `_recognize()` and performs the parent assignment itself so the Vault filename remains unchanged.
@@ -37,6 +39,16 @@ Source: [`recognizeDocument.js` in the Zotero 10.0.1 release](https://github.com
 The Zotero Local API can be disabled by the user, including on a supported Zotero 10 installation. Literature Note creation therefore does not depend on Local API availability. The paired Companion generates a deterministic citation key, checks for collisions in the user library, writes the `citationKey` field on the existing bibliographic item, and returns the saved value in the authenticated import response.
 
 This does not add a remote service or a second credential: it reuses the localhost-only endpoint, pairing token, and Vault-root boundary already required for PDF import.
+
+## Citation search
+
+Milestone 3 also avoids a Local API dependency. The Companion exposes authenticated `citations/search` and `citations/resolve` routes on Zotero's localhost connector server. Search reads regular, non-deleted items in the user library and returns a bounded bibliographic projection. Resolve looks up one validated Zotero item key and persists its collision-checked citation key. Query text and response metadata never leave the local machine.
+
+## Update manifest and provenance
+
+The release builder emits Zotero's Mozilla-style `updates.json` with a versioned HTTPS `update_link`, SHA-256 `update_hash`, and the same Zotero compatibility range as the XPI manifest. Archive contents are sorted and receive fixed timestamps and modes. GitHub's public Sigstore service signs build provenance for every published release artifact.
+
+Source: [Zotero plugin update manifest](https://www.zotero.org/support/dev/zotero_7_for_developers#updaterdf_updatesjson).
 
 ## Upgrade rule
 

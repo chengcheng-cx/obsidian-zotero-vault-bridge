@@ -1,8 +1,8 @@
 {
   "name": "obsidian-zotero-vault-bridge",
-  "version": "0.2.0",
+  "version": "0.4.0",
   "private": true,
-  "description": "Keep PDFs in an Obsidian vault while Zotero 10 recognizes and manages their bibliographic metadata.",
+  "description": "Bridge Obsidian and Zotero 10 for PDF recognition, Literature Notes, and citation autocomplete.",
   "homepage": "https://github.com/chengcheng-cx/obsidian-zotero-vault-bridge",
   "repository": {
     "type": "git",
@@ -15,8 +15,10 @@
   ],
   "scripts": {
     "build": "npm run build --workspace @zvb/obsidian-plugin && npm run build --workspace @zvb/zotero-companion",
+    "build:release": "npm run build && node scripts/package-release.mjs",
     "check": "npm run typecheck --workspace @zvb/obsidian-plugin && npm test",
-    "test": "npm run test --workspace @zvb/obsidian-plugin && npm run test --workspace @zvb/zotero-companion"
+    "test": "npm run test --workspace @zvb/obsidian-plugin && npm run test --workspace @zvb/zotero-companion",
+    "verify:reproducible": "node scripts/verify-reproducible.mjs"
   },
   "engines": {
     "node": ">=20"

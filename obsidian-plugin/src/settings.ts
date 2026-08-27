@@ -11,10 +11,12 @@ export interface BridgeSettings {
 	templatePath: string;
 	watchForNewPdfs: boolean;
 	scanOnStartup: boolean;
+	enableCitationAutocomplete: boolean;
 	zoteroEndpoint: string;
 	stablePollIntervalMs: number;
 	stableRequiredSamples: number;
 	stableTimeoutMs: number;
+	recognitionTimeoutMs: number;
 }
 
 export const DEFAULT_SETTINGS: BridgeSettings = {
@@ -23,10 +25,12 @@ export const DEFAULT_SETTINGS: BridgeSettings = {
 	templatePath: "Templates/Literature.md",
 	watchForNewPdfs: true,
 	scanOnStartup: true,
+	enableCitationAutocomplete: true,
 	zoteroEndpoint: "http://localhost:23119",
 	stablePollIntervalMs: 750,
 	stableRequiredSamples: 3,
 	stableTimeoutMs: 30_000,
+	recognitionTimeoutMs: 120_000,
 };
 
 export function loadSettings(value: unknown): BridgeSettings {
@@ -45,14 +49,38 @@ export function loadSettings(value: unknown): BridgeSettings {
 		templatePath: typeof candidate.templatePath === "string"
 			? normalizePath(candidate.templatePath)
 			: DEFAULT_SETTINGS.templatePath,
+		watchForNewPdfs: typeof candidate.watchForNewPdfs === "boolean"
+			? candidate.watchForNewPdfs
+			: DEFAULT_SETTINGS.watchForNewPdfs,
+		scanOnStartup: typeof candidate.scanOnStartup === "boolean"
+			? candidate.scanOnStartup
+			: DEFAULT_SETTINGS.scanOnStartup,
+		enableCitationAutocomplete: typeof candidate.enableCitationAutocomplete === "boolean"
+			? candidate.enableCitationAutocomplete
+			: DEFAULT_SETTINGS.enableCitationAutocomplete,
+		zoteroEndpoint: typeof candidate.zoteroEndpoint === "string"
+			? candidate.zoteroEndpoint.trim()
+			: DEFAULT_SETTINGS.zoteroEndpoint,
 		stablePollIntervalMs: positiveInteger(candidate.stablePollIntervalMs, DEFAULT_SETTINGS.stablePollIntervalMs),
 		stableRequiredSamples: positiveInteger(candidate.stableRequiredSamples, DEFAULT_SETTINGS.stableRequiredSamples),
 		stableTimeoutMs: positiveInteger(candidate.stableTimeoutMs, DEFAULT_SETTINGS.stableTimeoutMs),
+		recognitionTimeoutMs: boundedInteger(
+			candidate.recognitionTimeoutMs,
+			DEFAULT_SETTINGS.recognitionTimeoutMs,
+			10_000,
+			600_000,
+		),
 	};
 }
 
 function positiveInteger(value: unknown, fallback: number): number {
 	return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : fallback;
+}
+
+function boundedInteger(value: unknown, fallback: number, minimum: number, maximum: number): number {
+	return typeof value === "number" && Number.isInteger(value) && value >= minimum && value <= maximum
+		? value
+		: fallback;
 }
 
 export interface SettingsHost {
@@ -73,7 +101,7 @@ export class BridgeSettingTab extends PluginSettingTab {
 		containerEl.empty();
 		containerEl.createEl("h2", { text: "Zotero Vault Bridge" });
 		containerEl.createEl("p", {
-			text: "Links and recognizes PDFs, then creates idempotent Literature Notes from Zotero metadata.",
+			text: "Links and recognizes PDFs, creates Literature Notes, and completes Pandoc citations from Zotero.",
 			cls: "zotero-vault-bridge-settings-note",
 		});
 
@@ -116,12 +144,35 @@ export class BridgeSettingTab extends PluginSettingTab {
 				.onChange(async value => this.host.updateSettings({ scanOnStartup: value })));
 
 		new Setting(containerEl)
+			.setName("Citation autocomplete")
+			.setDesc("Show Zotero suggestions after typing [@ in a Markdown note.")
+			.addToggle(toggle => toggle
+				.setValue(this.host.settings.enableCitationAutocomplete)
+				.onChange(async value => this.host.updateSettings({ enableCitationAutocomplete: value })));
+
+		new Setting(containerEl)
 			.setName("Zotero endpoint")
 			.setDesc("Only loopback HTTP origins are accepted; the pairing token is never sent elsewhere.")
 			.addText(text => text
 				.setPlaceholder(DEFAULT_SETTINGS.zoteroEndpoint)
 				.setValue(this.host.settings.zoteroEndpoint)
 				.onChange(async value => this.host.updateSettings({ zoteroEndpoint: value.trim() })));
+
+		new Setting(containerEl)
+			.setName("Recognition timeout")
+			.setDesc("Seconds to wait before reporting that Zotero recognition is still running (10–600). A retry reuses the pending or linked attachment.")
+			.addText(text => {
+				text.inputEl.type = "number";
+				text.inputEl.min = "10";
+				text.inputEl.max = "600";
+				text.setValue(String(Math.round(this.host.settings.recognitionTimeoutMs / 1_000)))
+					.onChange(async value => {
+						let seconds = Number.parseInt(value, 10);
+						if (Number.isInteger(seconds) && seconds >= 10 && seconds <= 600) {
+							await this.host.updateSettings({ recognitionTimeoutMs: seconds * 1_000 });
+						}
+					});
+			});
 
 		new Setting(containerEl)
 			.setName("Test connection")

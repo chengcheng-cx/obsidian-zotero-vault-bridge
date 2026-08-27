@@ -2,3 +2,28 @@
 	color: var(--text-muted);
 	font-size: var(--font-ui-smaller);
 }
+
+.zotero-vault-bridge-citation-suggestion {
+	max-width: min(42rem, 80vw);
+}
+
+.zotero-vault-bridge-citation-title {
+	font-weight: var(--font-semibold);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.zotero-vault-bridge-citation-details,
+.zotero-vault-bridge-citation-key {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.zotero-vault-bridge-citation-key {
+	color: var(--text-accent);
+	font-family: var(--font-monospace);
+}

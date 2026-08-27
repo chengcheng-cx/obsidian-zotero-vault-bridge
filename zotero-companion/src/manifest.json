@@ -1,8 +1,8 @@
 {
   "manifest_version": 2,
   "name": "Zotero Vault Bridge Companion",
-  "version": "0.2.0",
-  "description": "Links and recognizes PDFs from an allowed Obsidian vault and persists deterministic citation keys.",
+  "version": "0.4.0",
+  "description": "Recognizes and relinks Vault PDFs, persists citation keys, and serves authenticated citation search to Obsidian.",
   "homepage_url": "https://github.com/chengcheng-cx/obsidian-zotero-vault-bridge",
   "applications": {
     "zotero": {
