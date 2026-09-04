@@ -117,6 +117,39 @@ export default class ZoteroVaultBridgePlugin extends Plugin implements SettingsH
 		new Notice(`Literature Note sync complete: ${result.imported} updated, ${result.failed} failed, ${result.discovered} PDFs found.`);
 	}
 
+	async syncActiveAnnotations(file: TFile): Promise<void> {
+		try {
+			new Notice("Syncing annotations from Zotero…");
+			let res = await this.importer.syncAnnotations(file.path);
+			new Notice(`Annotations synced: ${res.count} items in ${res.path}`);
+		}
+		catch (error) {
+			new Notice(this.userMessage(error), 10_000);
+		}
+	}
+
+	async syncAllAnnotations(): Promise<void> {
+		let completed = this.state.allComplete();
+		if (!completed.length) {
+			new Notice("No recognized PDF records found to sync annotations.");
+			return;
+		}
+		new Notice(`Syncing annotations for ${completed.length} literature notes…`);
+		let synced = 0;
+		let failed = 0;
+		for (let record of completed) {
+			try {
+				await this.importer.syncAnnotations(record.path);
+				synced += 1;
+			}
+			catch (err) {
+				failed += 1;
+				console.error(`Failed syncing annotations for ${record.path}:`, err);
+			}
+		}
+		new Notice(`Annotation sync complete: ${synced} updated, ${failed} failed.`);
+	}
+
 	private addCommands(): void {
 		this.addCommand({
 			id: "test-zotero-connection",
@@ -166,6 +199,28 @@ export default class ZoteroVaultBridgePlugin extends Plugin implements SettingsH
 			id: "sync-literature-notes",
 			name: "Sync all Literature Notes",
 			callback: () => void this.syncLiteratureNotes(),
+		});
+
+		this.addCommand({
+			id: "sync-active-annotations",
+			name: "Sync annotations for active Literature Note or PDF",
+			checkCallback: checking => {
+				let file = this.app.workspace.getActiveFile();
+				let available = file instanceof TFile && (
+					file.extension.toLocaleLowerCase("en-US") === "pdf"
+					|| Boolean(this.state.findByLiteratureNote(file.path))
+				);
+				if (available && !checking && file) {
+					void this.syncActiveAnnotations(file);
+				}
+				return available;
+			},
+		});
+
+		this.addCommand({
+			id: "sync-all-annotations",
+			name: "Sync all annotations",
+			callback: () => void this.syncAllAnnotations(),
 		});
 
 		this.addCommand({

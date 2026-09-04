@@ -93,4 +93,77 @@ describe("ImportService reliability", () => {
 		expect(state.get(file.path)?.status).toBe("failed");
 		expect(state.get(file.path)?.errorCode).toBe("import_cancelled");
 	});
+
+	it("syncs annotations for a completed paper record", async () => {
+		let state = new ImportStateStore({
+			"01_Papers/paper.pdf": {
+				path: "01_Papers/paper.pdf",
+				status: "complete",
+				attempts: 1,
+				updatedAt: "2026-01-01T00:00:00.000Z",
+				itemKey: "ITEM01",
+				attachmentKey: "ATTACH01",
+				literatureNote: "02_Literature/key.md",
+				metadata: {
+					itemType: "journalArticle",
+					title: "Paper",
+					creators: [],
+					date: "2026",
+					year: "2026",
+					publicationTitle: "",
+					doi: "",
+					abstractNote: "",
+					url: "",
+					citationKey: "key",
+				},
+				fingerprint: { size: 3, mtime: 1, sha256: SHA_ABC },
+			},
+		}, async () => undefined);
+
+		let client = {
+			getAnnotations: async () => ({
+				success: true as const,
+				attachmentKey: "ATTACH01",
+				itemKey: "ITEM01",
+				annotations: [
+					{
+						key: "ANNO01",
+						type: "highlight",
+						text: "Highlighted quote",
+						comment: "Note",
+						color: "#ffd400",
+						colorCategory: "yellow" as const,
+						pageLabel: "1",
+						sortIndex: "00001",
+						tags: [],
+						selectUri: "zotero://select/library/items/ANNO01",
+						openPdfUri: "zotero://open-pdf/library/items/ATTACH01?page=1&annotation=ANNO01",
+					},
+				],
+			}),
+		};
+
+		let writtenAnnotations: unknown[] = [];
+		let notes: LiteratureNoteWriter = {
+			createOrUpdate: async (_path, _record, annos) => {
+				writtenAnnotations = annos || [];
+				return { path: "02_Literature/key.md", created: false };
+			},
+		};
+
+		let app = { vault: { adapter: adapter(1) } } as unknown as App;
+		let importer = new ImportService(
+			app,
+			state,
+			client as unknown as ZoteroBridgeClient,
+			notes,
+			settings,
+			() => "C:\\Vault",
+		);
+
+		let res = await importer.syncAnnotations("01_Papers/paper.pdf");
+		expect(res.count).toBe(1);
+		expect(res.path).toBe("02_Literature/key.md");
+		expect(writtenAnnotations.length).toBe(1);
+	});
 });

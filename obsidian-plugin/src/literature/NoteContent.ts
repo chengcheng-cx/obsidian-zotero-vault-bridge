@@ -1,4 +1,4 @@
-import type { RecognizedMetadata } from "../zotero/ZoteroTypes";
+import type { RecognizedMetadata, ZoteroAnnotationItem } from "../zotero/ZoteroTypes";
 
 export interface LiteratureNoteContext {
 	metadata: RecognizedMetadata;
@@ -207,4 +207,96 @@ function splitFrontmatter(content: string): {
 
 function yamlString(value: string): string {
 	return JSON.stringify(value.replace(/\r?\n/g, " "));
+}
+
+export const ANNOTATIONS_START = "<!-- BEGIN ANNOTATIONS -->";
+export const ANNOTATIONS_END = "<!-- END ANNOTATIONS -->";
+const ANNOTATIONS_GUARD = "<!-- ⚠️ 此區塊由 Zotero 同步維護，手動編輯將在下次同步時被覆寫，個人心得請撰寫於區塊之外 -->";
+
+const CALLOUT_MAP: Record<string, string> = {
+	yellow: "quote",
+	red: "danger",
+	green: "tip",
+	blue: "note",
+	purple: "question",
+	orange: "warning",
+};
+
+export function formatAnnotations(annotations: ZoteroAnnotationItem[], citationKey: string): string {
+	let lines: string[] = [ANNOTATIONS_START, ANNOTATIONS_GUARD];
+
+	if (!annotations.length) {
+		lines.push(
+			"> [!info] 尚無劃線註解",
+			"> 在 Zotero 閱讀器中對此 PDF 劃線或新增批註後，執行「Sync annotations」即可同步至此處。",
+		);
+	}
+	else {
+		for (let anno of annotations) {
+			let callout = CALLOUT_MAP[anno.colorCategory] || "quote";
+			let pageText = anno.pageLabel ? `p. ${anno.pageLabel}` : "PDF";
+			let title = `> [!${callout}]+ ${pageText} ([Zotero](${anno.openPdfUri}))`;
+			lines.push(title);
+
+			if (anno.type === "image") {
+				lines.push(`> ![[assets/${citationKey}/${anno.key}.png]]`);
+			}
+			if (anno.text) {
+				let quotedText = anno.text.replace(/\r?\n/g, "\n> ");
+				lines.push(`> ${quotedText}`);
+			}
+			if (anno.comment) {
+				let quotedComment = anno.comment.replace(/\r?\n/g, "\n> ");
+				lines.push(`>\n> **Comment**: ${quotedComment}`);
+			}
+			if (anno.tags && anno.tags.length) {
+				let tagsText = anno.tags.map(t => `#${t}`).join(" ");
+				lines.push(`>\n> ${tagsText}`);
+			}
+			lines.push("");
+		}
+		if (lines[lines.length - 1] === "") {
+			lines.pop();
+		}
+	}
+
+	lines.push(ANNOTATIONS_END);
+	return lines.join("\n");
+}
+
+export function updateManagedAnnotations(content: string, renderedAnnotationsBlock: string): string {
+	let parsed = splitFrontmatter(content);
+	let body = parsed.body;
+	let newline = parsed.newline;
+
+	let startIndex = body.indexOf(ANNOTATIONS_START);
+	let endIndex = body.indexOf(ANNOTATIONS_END);
+
+	if (startIndex >= 0 && endIndex >= startIndex) {
+		let before = body.slice(0, startIndex);
+		let after = body.slice(endIndex + ANNOTATIONS_END.length);
+		let newBody = before + renderedAnnotationsBlock + after;
+		return rejoinNote(parsed.frontmatterLines, newBody, newline);
+	}
+
+	let abstractMatch = /(?:^|\n)(##\s+Abstract[\s\S]*?)(?=(?:\n##\s+)|$)/.exec(body);
+	let newBody: string;
+	if (abstractMatch && abstractMatch.index >= 0) {
+		let insertPos = abstractMatch.index + abstractMatch[0].length;
+		let before = body.slice(0, insertPos).replace(/\s+$/, "");
+		let after = body.slice(insertPos).replace(/^\s+/, "");
+		newBody = `${before}\n\n## Annotations\n\n${renderedAnnotationsBlock}\n\n${after}`;
+	}
+	else {
+		newBody = body.trimEnd() + `\n\n## Annotations\n\n${renderedAnnotationsBlock}\n`;
+	}
+
+	return rejoinNote(parsed.frontmatterLines, newBody, newline);
+}
+
+function rejoinNote(frontmatterLines: string[], body: string, newline: "\n" | "\r\n"): string {
+	if (!frontmatterLines.length) {
+		return body;
+	}
+	return ["---", ...frontmatterLines, "---", body].join(newline);
 }

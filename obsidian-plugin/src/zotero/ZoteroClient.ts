@@ -8,6 +8,7 @@ import type {
 	CitationSearchResult,
 	ImportResult,
 	RelinkResult,
+	ZoteroAnnotationsResult,
 } from "./ZoteroTypes";
 
 const TOKEN_HEADER = "X-Zotero-Vault-Bridge-Token";
@@ -108,6 +109,17 @@ export class ZoteroBridgeClient {
 			{ itemKey },
 		);
 		return result.item;
+	}
+
+	async getAnnotations(
+		attachmentKey: string,
+		options: { exportImages?: boolean } = {},
+	): Promise<ZoteroAnnotationsResult> {
+		return this.request<ZoteroAnnotationsResult>(
+			"/zotero-vault-bridge/annotations",
+			"POST",
+			{ attachmentKey, ...options },
+		);
 	}
 
 	private async request<T>(route: string, method: "GET" | "POST", body?: object): Promise<T> {

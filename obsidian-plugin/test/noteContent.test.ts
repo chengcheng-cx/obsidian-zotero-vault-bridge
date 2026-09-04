@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
 	literatureFrontmatter,
+	formatAnnotations,
+	updateManagedAnnotations,
 	isSafeCitationKey,
 	readFrontmatterScalar,
 	renderLiteratureTemplate,
@@ -86,5 +88,98 @@ describe("Literature Note content", () => {
 		expect(first).toContain("# User heading\n\nUser-owned comments stay unchanged.");
 		expect(first).toContain('zotero_item_key: "ITEM0001"');
 		expect(readFrontmatterScalar(first, "zotero_item_key")).toBe("ITEM0001");
+	});
+
+	it("formats annotations into semantic callouts, deep links, tags and empty state", () => {
+		let empty = formatAnnotations([], "key1");
+		expect(empty).toContain("<!-- BEGIN ANNOTATIONS -->");
+		expect(empty).toContain("<!-- END ANNOTATIONS -->");
+		expect(empty).toContain("> [!info] 尚無劃線註解");
+
+		let formatted = formatAnnotations([
+			{
+				key: "ANNO01",
+				type: "highlight",
+				text: "Important theorem text",
+				comment: "User reflection",
+				color: "#ffd400",
+				colorCategory: "yellow",
+				pageLabel: "3",
+				sortIndex: "00003",
+				tags: ["theorem"],
+				selectUri: "zotero://select/library/items/ANNO01",
+				openPdfUri: "zotero://open-pdf/library/items/ATTA?page=3&annotation=ANNO01",
+			},
+			{
+				key: "ANNO02",
+				type: "image",
+				text: "Figure 1 caption",
+				comment: "",
+				color: "#ff6666",
+				colorCategory: "red",
+				pageLabel: "5",
+				sortIndex: "00005",
+				tags: [],
+				selectUri: "zotero://select/library/items/ANNO02",
+				openPdfUri: "zotero://open-pdf/library/items/ATTA?page=5&annotation=ANNO02",
+			},
+		], "lovelace2026analytical");
+
+		expect(formatted).toContain("> [!quote]+ p. 3 ([Zotero](zotero://open-pdf/library/items/ATTA?page=3&annotation=ANNO01))");
+		expect(formatted).toContain("> Important theorem text");
+		expect(formatted).toContain("> **Comment**: User reflection");
+		expect(formatted).toContain("> #theorem");
+		expect(formatted).toContain("> [!danger]+ p. 5 ([Zotero](zotero://open-pdf/library/items/ATTA?page=5&annotation=ANNO02))");
+		expect(formatted).toContain("> ![[assets/lovelace2026analytical/ANNO02.png]]");
+	});
+
+	it("updates existing annotation anchor without touching manual user notes", () => {
+		let existingNote = [
+			"---",
+			"type: literature",
+			"---",
+			"# Note",
+			"",
+			"## Abstract",
+			"The abstract.",
+			"",
+			"## Annotations",
+			"",
+			"<!-- BEGIN ANNOTATIONS -->",
+			"Old content",
+			"<!-- END ANNOTATIONS -->",
+			"",
+			"## My Comments",
+			"",
+			"Critical manual user notes that must never be deleted!",
+		].join("\n");
+
+		let block = formatAnnotations([], "key1");
+		let updated = updateManagedAnnotations(existingNote, block);
+
+		expect(updated).toContain(block);
+		expect(updated).not.toContain("Old content");
+		expect(updated).toContain("## My Comments\n\nCritical manual user notes that must never be deleted!");
+	});
+
+	it("inserts annotations after Abstract in legacy notes lacking anchor", () => {
+		let legacyNote = [
+			"---",
+			"type: literature",
+			"---",
+			"# Note",
+			"",
+			"## Abstract",
+			"The abstract text.",
+			"",
+			"## Research Question",
+			"My question.",
+		].join("\n");
+
+		let block = formatAnnotations([], "key1");
+		let updated = updateManagedAnnotations(legacyNote, block);
+
+		expect(updated).toContain("## Abstract\nThe abstract text.\n\n## Annotations\n\n" + block);
+		expect(updated).toContain("## Research Question\nMy question.");
 	});
 });

@@ -10,6 +10,7 @@ var VaultBridge = new function () {
 		attachmentVerify: "/zotero-vault-bridge/attachments/verify",
 		citationSearch: "/zotero-vault-bridge/citations/search",
 		citationResolve: "/zotero-vault-bridge/citations/resolve",
+		annotations: "/zotero-vault-bridge/annotations",
 	};
 
 	let pluginVersion = "0.0.0";
@@ -166,17 +167,37 @@ var VaultBridge = new function () {
 
 	function field(item, name) {
 		try {
-			return item.getField(name) || "";
+			let val = item.getField(name);
+			if (val) return val;
 		}
-		catch (error) {
-			return "";
+		catch (error) {}
+		if (name === "citationKey") {
+			try {
+				let extra = item.getField("extra") || "";
+				let match = /(?:^|\n)citation key\s*:\s*([^\r\n]+)/i.exec(extra);
+				if (match) return match[1].trim();
+			}
+			catch (error) {}
 		}
+		return "";
 	}
 
 	async function citationKeyExists(candidate, itemID) {
 		let fieldID = Zotero.ItemFields.getID("citationKey");
 		if (!fieldID) {
-			throw new BridgeError(500, "citation_key_field_missing", "This Zotero version does not expose the citationKey field.");
+			let extraFieldID = Zotero.ItemFields.getID("extra");
+			if (!extraFieldID) return false;
+			let itemIDs = await Zotero.DB.columnQueryAsync(
+				"SELECT I.itemID "
+					+ "FROM items I "
+					+ "JOIN itemData ID ON ID.itemID = I.itemID "
+					+ "JOIN itemDataValues IDV ON IDV.valueID = ID.valueID "
+					+ "LEFT JOIN deletedItems DI ON DI.itemID = I.itemID "
+					+ "WHERE I.libraryID = ? AND ID.fieldID = ? AND LOWER(IDV.value) LIKE ? "
+					+ "AND I.itemID != ? AND DI.itemID IS NULL",
+				[Zotero.Libraries.userLibraryID, extraFieldID, `%citation key: ${candidate.toLowerCase()}%`, itemID]
+			);
+			return Boolean(itemIDs?.length);
 		}
 		let itemIDs = await Zotero.DB.columnQueryAsync(
 			"SELECT I.itemID "
@@ -222,7 +243,14 @@ var VaultBridge = new function () {
 				let current = field(item, "citationKey");
 				let candidate = await candidateCitationKey(item, metadata, current);
 				if (!current) {
-					item.setField("citationKey", candidate);
+					try {
+						item.setField("citationKey", candidate);
+					}
+					catch (e) {
+						let extra = field(item, "extra");
+						let newExtra = extra ? `${extra}\nCitation Key: ${candidate}` : `Citation Key: ${candidate}`;
+						item.setField("extra", newExtra);
+					}
 					await item.saveTx();
 				}
 				return candidate;
@@ -586,6 +614,77 @@ var VaultBridge = new function () {
 		};
 	}
 
+	function classifyColor(hex) {
+		let clean = String(hex || "").trim().toLowerCase();
+		if (clean.startsWith("#ff6") || clean.startsWith("#e0") || clean.startsWith("#d3") || clean.startsWith("#f44")) return "red";
+		if (clean.startsWith("#5f") || clean.startsWith("#2e7") || clean.startsWith("#4c") || clean.startsWith("#00a")) return "green";
+		if (clean.startsWith("#2e") || clean.startsWith("#197") || clean.startsWith("#219") || clean.startsWith("#007")) return "blue";
+		if (clean.startsWith("#a2") || clean.startsWith("#9c2") || clean.startsWith("#673") || clean.startsWith("#7e5")) return "purple";
+		if (clean.startsWith("#f19") || clean.startsWith("#ff9") || clean.startsWith("#ffb") || clean.startsWith("#f57")) return "orange";
+		return "yellow";
+	}
+
+	async function getAttachmentAnnotations(rawAttachmentKey, exportImages = false) {
+		let attachment = await findAttachmentByKey(rawAttachmentKey);
+		let annotations = typeof attachment.getAnnotations === "function"
+			? await attachment.getAnnotations()
+			: [];
+
+		let results = [];
+		for (let anno of annotations) {
+			if (!anno) continue;
+			let type = anno.annotationType || "highlight";
+			let imageBase64;
+			if (type === "image" && exportImages) {
+				try {
+					let imgPath = typeof anno.getImagePath === "function" ? anno.getImagePath() : null;
+					if (imgPath && Zotero.File.pathToFile(imgPath).exists()) {
+						let bytes = await Zotero.File.getBinaryContentsAsync(imgPath);
+						if (typeof Buffer !== "undefined") {
+							imageBase64 = Buffer.from(bytes).toString("base64");
+						}
+						else if (typeof Zotero.Utilities?.base64Encode === "function") {
+							imageBase64 = Zotero.Utilities.base64Encode(bytes);
+						}
+					}
+				}
+				catch (imgErr) {
+					log(`Failed reading image for annotation ${anno.key}: ${imgErr.message}`);
+				}
+			}
+
+			results.push({
+				key: anno.key,
+				type,
+				text: anno.annotationText || "",
+				comment: anno.annotationComment || "",
+				color: anno.annotationColor || "#ffd400",
+				colorCategory: classifyColor(anno.annotationColor),
+				pageLabel: anno.annotationPageLabel || "",
+				sortIndex: anno.annotationSortIndex || "",
+				tags: Array.isArray(anno.getTags?.()) ? anno.getTags().map(t => t.tag) : [],
+				selectUri: `zotero://select/library/items/${anno.key}`,
+				openPdfUri: `zotero://open-pdf/library/items/${attachment.key}?page=${encodeURIComponent(anno.annotationPageLabel || "1")}&annotation=${anno.key}`,
+				imageBase64,
+			});
+		}
+
+		results.sort((a, b) => {
+			let pageA = parseInt(a.pageLabel || "0", 10) || 0;
+			let pageB = parseInt(b.pageLabel || "0", 10) || 0;
+			if (pageA !== pageB) return pageA - pageB;
+			return String(a.sortIndex || "").localeCompare(String(b.sortIndex || ""));
+		});
+
+		let parent = attachment.parentID ? await Zotero.Items.getAsync(attachment.parentID) : null;
+		return {
+			success: true,
+			attachmentKey: attachment.key,
+			itemKey: parent?.key || "",
+			annotations: results,
+		};
+	}
+
 	function makeStatusEndpoint() {
 		return function StatusEndpoint() {};
 	}
@@ -612,6 +711,10 @@ var VaultBridge = new function () {
 
 	function makeCitationResolveEndpoint() {
 		return function CitationResolveEndpoint() {};
+	}
+
+	function makeAnnotationsEndpoint() {
+		return function AnnotationsEndpoint() {};
 	}
 
 	this.startup = async function ({ version }) {
@@ -766,6 +869,25 @@ var VaultBridge = new function () {
 			},
 		};
 
+		endpointTypes.annotations = makeAnnotationsEndpoint();
+		endpointTypes.annotations.prototype = {
+			supportedMethods: ["POST"],
+			supportedDataTypes: ["application/json"],
+			init: async function (requestData) {
+				try {
+					requireValidToken(requestData);
+					let result = await getAttachmentAnnotations(
+						requestData.data?.attachmentKey,
+						requestData.data?.exportImages === true,
+					);
+					return response(200, result);
+				}
+				catch (error) {
+					return errorResponse(error);
+				}
+			},
+		};
+
 		Zotero.Server.Endpoints[ENDPOINTS.status] = endpointTypes.status;
 		Zotero.Server.Endpoints[ENDPOINTS.configure] = endpointTypes.configure;
 		Zotero.Server.Endpoints[ENDPOINTS.import] = endpointTypes.import;
@@ -773,6 +895,7 @@ var VaultBridge = new function () {
 		Zotero.Server.Endpoints[ENDPOINTS.attachmentVerify] = endpointTypes.attachmentVerify;
 		Zotero.Server.Endpoints[ENDPOINTS.citationSearch] = endpointTypes.citationSearch;
 		Zotero.Server.Endpoints[ENDPOINTS.citationResolve] = endpointTypes.citationResolve;
+		Zotero.Server.Endpoints[ENDPOINTS.annotations] = endpointTypes.annotations;
 		log("Registered localhost endpoints");
 	};
 

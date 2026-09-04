@@ -69,6 +69,30 @@ function createHarness({
 				let index = attachments.indexOf(this);
 				if (index >= 0) attachments.splice(index, 1);
 			},
+			async getAnnotations() {
+				return [
+					{
+						key: "ANNO0002",
+						annotationType: "highlight",
+						annotationText: "Second page insight",
+						annotationComment: "Comment on page 2",
+						annotationColor: "#ff6666",
+						annotationPageLabel: "2",
+						annotationSortIndex: "00002|000010",
+						getTags() { return [{ tag: "critical" }]; },
+					},
+					{
+						key: "ANNO0001",
+						annotationType: "highlight",
+						annotationText: "First page insight",
+						annotationComment: "",
+						annotationColor: "#ffd400",
+						annotationPageLabel: "1",
+						annotationSortIndex: "00001|000005",
+						getTags() { return []; },
+					},
+				];
+			},
 		};
 	}
 	const attachment = makeAttachment(pdfPath);
@@ -461,4 +485,42 @@ test("searches citations without writing and persists only the selected item", a
 	assert.equal(resolved[0], 200);
 	assert.equal(JSON.parse(resolved[2]).item.citationKey, "lovelace2026recognized");
 	assert.equal(harness.counts().citationSaveCalls, 1);
+});
+
+test("fetches and sorts annotations with semantic colors and deep links", async () => {
+	const harness = createHarness();
+	const token = "b".repeat(64);
+	await harness.context.VaultBridge.startup({ version: "0.5.0" });
+
+	const Configure = harness.Zotero.Server.Endpoints["/zotero-vault-bridge/configure"];
+	await new Configure().init({
+		headers: { "x-zotero-vault-bridge-token": token },
+		data: { vaultRoot: harness.vaultRoot },
+	});
+
+	await harness.Zotero.Attachments.linkFromFile({ file: harness.pdfPath });
+
+	const Annotations = harness.Zotero.Server.Endpoints["/zotero-vault-bridge/annotations"];
+	const unauthorized = await new Annotations().init({
+		headers: { "x-zotero-vault-bridge-token": "c".repeat(64) },
+		data: { attachmentKey: harness.attachment.key },
+	});
+	assert.equal(unauthorized[0], 403);
+
+	const res = await new Annotations().init({
+		headers: { "x-zotero-vault-bridge-token": token },
+		data: { attachmentKey: harness.attachment.key },
+	});
+	assert.equal(res[0], 200);
+	const data = JSON.parse(res[2]);
+	assert.equal(data.success, true);
+	assert.equal(data.annotations.length, 2);
+	assert.equal(data.annotations[0].key, "ANNO0001");
+	assert.equal(data.annotations[0].pageLabel, "1");
+	assert.equal(data.annotations[0].colorCategory, "yellow");
+	assert.equal(data.annotations[0].openPdfUri, `zotero://open-pdf/library/items/${harness.attachment.key}?page=1&annotation=ANNO0001`);
+	assert.equal(data.annotations[1].key, "ANNO0002");
+	assert.equal(data.annotations[1].pageLabel, "2");
+	assert.equal(data.annotations[1].colorCategory, "red");
+	assert.deepEqual(data.annotations[1].tags, ["critical"]);
 });

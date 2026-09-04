@@ -78,6 +78,14 @@ export class ImportStateStore {
 		return this.records[path];
 	}
 
+	findByLiteratureNote(notePath: string): PaperRecord | undefined {
+		return Object.values(this.records).find(r => r.literatureNote === notePath);
+	}
+
+	allComplete(): PaperRecord[] {
+		return Object.values(this.records).filter(r => r.status === "complete" && r.attachmentKey);
+	}
+
 	needsImport(
 		path: string,
 		includeFailed: boolean,

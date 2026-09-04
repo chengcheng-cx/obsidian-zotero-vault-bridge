@@ -132,7 +132,12 @@ export class ImportService {
 			return this.importPath(newPath, { force: true });
 		}
 
-		let note = await this.literatureNotes.createOrUpdate(newPath, moved);
+		let annotations = moved.attachmentKey
+			? await this.client.getAnnotations(moved.attachmentKey, { exportImages: true })
+				.then(res => res.annotations)
+				.catch(() => [])
+			: [];
+		let note = await this.literatureNotes.createOrUpdate(newPath, moved, annotations);
 		await this.state.markLiteratureNote(newPath, note.path);
 		await this.state.markComplete(newPath);
 		let completed = this.state.get(newPath);
@@ -140,6 +145,17 @@ export class ImportService {
 			throw new Error("Relink completed without a persisted paper record.");
 		}
 		return completed;
+	}
+
+	async syncAnnotations(pathOrNotePath: string): Promise<{ path: string; count: number }> {
+		let record = this.state.get(pathOrNotePath)
+			|| this.state.findByLiteratureNote(pathOrNotePath);
+		if (!record?.attachmentKey || !record?.metadata) {
+			throw new Error("This file does not correspond to a recognized Zotero PDF.");
+		}
+		let annotationsRes = await this.client.getAnnotations(record.attachmentKey, { exportImages: true });
+		let note = await this.literatureNotes.createOrUpdate(record.path, record, annotationsRes.annotations);
+		return { path: note.path, count: annotationsRes.annotations.length };
 	}
 
 	private async runImport(
@@ -192,7 +208,12 @@ export class ImportService {
 			if (!recognized) {
 				throw new Error("Zotero recognition completed without a persisted paper record.");
 			}
-			let note = await this.literatureNotes.createOrUpdate(path, recognized);
+			let annotations = result.attachmentKey
+				? await this.client.getAnnotations(result.attachmentKey, { exportImages: true })
+					.then(res => res.annotations)
+					.catch(() => [])
+				: [];
+			let note = await this.literatureNotes.createOrUpdate(path, recognized, annotations);
 			await this.state.markLiteratureNote(path, note.path);
 			await this.state.markComplete(path);
 			let record = this.state.get(path);
