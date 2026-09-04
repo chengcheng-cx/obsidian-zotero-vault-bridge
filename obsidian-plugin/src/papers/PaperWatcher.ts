@@ -15,6 +15,8 @@ export interface ScanResult {
 }
 
 export class PaperWatcher {
+	private readonly pendingDeletes = new Map<string, number>();
+
 	constructor(
 		private readonly plugin: Plugin,
 		private readonly vault: Vault,
@@ -24,8 +26,23 @@ export class PaperWatcher {
 	) {}
 
 	start(): void {
+		this.plugin.register(() => {
+			for (let timer of this.pendingDeletes.values()) {
+				window.clearTimeout(timer);
+			}
+			this.pendingDeletes.clear();
+		});
+
 		this.plugin.registerEvent(this.vault.on("create", file => {
-			if (!(file instanceof TFile) || !this.getSettings().watchForNewPdfs) {
+			if (!(file instanceof TFile)) {
+				return;
+			}
+			let pending = this.pendingDeletes.get(file.path);
+			if (pending !== undefined) {
+				window.clearTimeout(pending);
+				this.pendingDeletes.delete(file.path);
+			}
+			if (!this.getSettings().watchForNewPdfs) {
 				return;
 			}
 			if (this.isPaper(file)) {
@@ -33,9 +50,35 @@ export class PaperWatcher {
 			}
 		}));
 
+		this.plugin.registerEvent(this.vault.on("delete", file => {
+			if (!(file instanceof TFile)) {
+				return;
+			}
+			if (this.state.get(file.path)) {
+				let existingTimer = this.pendingDeletes.get(file.path);
+				if (existingTimer !== undefined) {
+					window.clearTimeout(existingTimer);
+				}
+				let timer = window.setTimeout(() => {
+					this.pendingDeletes.delete(file.path);
+					let stillExists = this.vault.getAbstractFileByPath(file.path);
+					if (!stillExists) {
+						void this.importer.handleFileMissing(file.path)
+							.catch(err => console.error("Zotero Vault Bridge missing handle failed", err));
+					}
+				}, 3_000);
+				this.pendingDeletes.set(file.path, timer);
+			}
+		}));
+
 		this.plugin.registerEvent(this.vault.on("rename", (file, oldPath) => {
 			if (!(file instanceof TFile)) {
 				return;
+			}
+			let pending = this.pendingDeletes.get(oldPath);
+			if (pending !== undefined) {
+				window.clearTimeout(pending);
+				this.pendingDeletes.delete(oldPath);
 			}
 			if (!this.state.get(oldPath)
 					&& (!this.getSettings().watchForNewPdfs || !this.isPaper(file))) {
@@ -63,6 +106,7 @@ export class PaperWatcher {
 	}
 
 	async scan(includeFailed: boolean): Promise<ScanResult> {
+		await this.reconcileLiteratureNotes().catch(err => console.error("Zotero Vault Bridge note reconcile failed", err));
 		let files = this.vault.getFiles().filter(file => this.isPaper(file));
 		let result: ScanResult = { discovered: files.length, imported: 0, failed: 0 };
 
@@ -80,6 +124,19 @@ export class PaperWatcher {
 			}
 		}
 		return result;
+	}
+
+	private async reconcileLiteratureNotes(): Promise<void> {
+		let litFolder = this.getSettings().literatureFolder;
+		let files = this.vault.getFiles().filter(file =>
+			file.extension.toLowerCase() === "md"
+			&& (file.path === litFolder || file.path.startsWith(`${litFolder}/`))
+		);
+		for (let file of files) {
+			if (!this.state.findByLiteratureNote(file.path)) {
+				await this.importer.recoverFromNote(file).catch(() => null);
+			}
+		}
 	}
 
 	private async handleRename(file: TFile, oldPath: string): Promise<void> {

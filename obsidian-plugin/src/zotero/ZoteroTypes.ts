@@ -69,3 +69,27 @@ export interface BridgeErrorPayload {
 	error: string;
 	message: string;
 }
+
+export type AnnotationColorCategory = "yellow" | "red" | "green" | "blue" | "purple" | "orange" | "gray" | "other";
+
+export interface ZoteroAnnotationItem {
+	key: string;
+	type: "highlight" | "note" | "image" | "underline" | string;
+	text: string;
+	comment: string;
+	color: string;
+	colorCategory: AnnotationColorCategory;
+	pageLabel: string;
+	sortIndex: string;
+	tags: string[];
+	selectUri: string;
+	openPdfUri: string;
+	imageBase64?: string;
+}
+
+export interface ZoteroAnnotationsResult {
+	success: true;
+	attachmentKey: string;
+	itemKey: string;
+	annotations: ZoteroAnnotationItem[];
+}

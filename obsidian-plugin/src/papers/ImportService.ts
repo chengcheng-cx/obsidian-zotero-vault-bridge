@@ -1,9 +1,10 @@
 import {
 	FileSystemAdapter,
+	TFile,
 	type App,
-	type TFile,
 } from "obsidian";
 import type { LiteratureNoteWriter } from "../literature/LiteratureNoteService";
+import { readFrontmatterScalar } from "../literature/NoteContent";
 import type { BridgeSettings } from "../settings";
 import {
 	ZoteroBridgeClient,
@@ -132,7 +133,15 @@ export class ImportService {
 			return this.importPath(newPath, { force: true });
 		}
 
-		let note = await this.literatureNotes.createOrUpdate(newPath, moved);
+		let annotations = (settings.syncAnnotationsOnImport && moved.attachmentKey)
+			? await this.client.getAnnotations(moved.attachmentKey, { exportImages: settings.exportAnnotationImages })
+				.then(res => res.annotations)
+				.catch(error => {
+					console.warn(`Zotero Vault Bridge: Failed fetching annotations for ${newPath}`, error);
+					return undefined;
+				})
+			: undefined;
+		let note = await this.literatureNotes.createOrUpdate(newPath, moved, annotations);
 		await this.state.markLiteratureNote(newPath, note.path);
 		await this.state.markComplete(newPath);
 		let completed = this.state.get(newPath);
@@ -140,6 +149,140 @@ export class ImportService {
 			throw new Error("Relink completed without a persisted paper record.");
 		}
 		return completed;
+	}
+
+	async handleFileMissing(path: string): Promise<void> {
+		let record = this.state.get(path);
+		if (record && record.status !== "missing") {
+			await this.state.markMissing(path);
+		}
+	}
+
+	async recoverFromNote(file: TFile): Promise<PaperRecord | null> {
+		let content = await this.app.vault.read(file);
+		let itemKey = readFrontmatterScalar(content, "zotero_item_key") || "";
+		let attachmentKey = readFrontmatterScalar(content, "zotero_attachment_key") || "";
+		let pdfRaw = readFrontmatterScalar(content, "pdf") || "";
+
+		if (!itemKey && !attachmentKey) {
+			return null;
+		}
+
+		let pdfMatch = /\[\[(.*?)(?:\|.*)?\]\]/.exec(pdfRaw);
+		let pdfPath = (pdfMatch?.[1] || pdfRaw).trim();
+		if (!pdfPath) {
+			return null;
+		}
+
+		await this.client.ensureConfigured(this.getVaultRoot());
+		let metadataRes = await this.client.getItemMetadata({
+			itemKey: itemKey || undefined,
+			attachmentKey: attachmentKey || undefined,
+		});
+		if (!metadataRes?.metadata) {
+			return null;
+		}
+
+		let adapter = this.requireFileSystemAdapter();
+		let settings = this.getSettings();
+		let pdfFile = this.app.vault.getAbstractFileByPath(pdfPath);
+		let fingerprint: FileFingerprint | undefined;
+		let status: PaperRecord["status"] = "complete";
+
+		if (pdfFile instanceof TFile) {
+			try {
+				fingerprint = await this.fingerprintFile(adapter, pdfPath, settings, new AbortController().signal);
+			}
+			catch {
+				status = "complete";
+			}
+		}
+		else {
+			status = "missing";
+		}
+
+		let record: PaperRecord = {
+			path: pdfPath,
+			status,
+			attempts: 1,
+			updatedAt: new Date().toISOString(),
+			itemKey: metadataRes.itemKey,
+			attachmentKey: metadataRes.attachmentKey,
+			selectUri: metadataRes.selectUri,
+			metadata: metadataRes.metadata,
+			literatureNote: file.path,
+			fingerprint,
+		};
+
+		await this.state.registerRecovered(record);
+		return record;
+	}
+
+	async syncAnnotations(pathOrNotePath: string): Promise<{ path: string; count: number }> {
+		let record = this.state.get(pathOrNotePath)
+			|| this.state.findByLiteratureNote(pathOrNotePath);
+		if (!record?.attachmentKey || !record?.metadata) {
+			let file = this.app.vault.getAbstractFileByPath(pathOrNotePath);
+			if (file instanceof TFile && file.extension.toLowerCase() === "md") {
+				let recovered = await this.recoverFromNote(file).catch(() => null);
+				if (recovered?.attachmentKey && recovered?.metadata) {
+					record = recovered;
+				}
+			}
+		}
+		if (!record?.attachmentKey || !record?.metadata) {
+			throw new Error("This file does not correspond to a recognized Zotero PDF.");
+		}
+		let settings = this.getSettings();
+		let annotationsRes = await this.client.getAnnotations(record.attachmentKey, {
+			exportImages: settings.exportAnnotationImages,
+		});
+		let note = await this.literatureNotes.createOrUpdate(record.path, record, annotationsRes.annotations);
+		return { path: note.path, count: annotationsRes.annotations.length };
+	}
+
+	async syncAllAnnotationsWithPool(
+		concurrency = 3,
+		onProgress?: (done: number, total: number) => void,
+	): Promise<{ synced: number; failed: number }> {
+		let completed = this.state.allComplete().filter(r => r.status !== "missing");
+		let total = completed.length;
+		if (!total) {
+			return { synced: 0, failed: 0 };
+		}
+
+		let done = 0;
+		let synced = 0;
+		let failed = 0;
+		let queue = [...completed];
+
+		let workers = Array.from({ length: Math.min(concurrency, total) }, async () => {
+			while (queue.length > 0) {
+				let record = queue.shift();
+				if (!record) break;
+				try {
+					await this.syncAnnotations(record.path);
+					synced += 1;
+				}
+				catch (err) {
+					failed += 1;
+					console.error(`Failed syncing annotations for ${record.path}:`, err);
+				}
+				finally {
+					done += 1;
+					onProgress?.(done, total);
+				}
+			}
+		});
+
+		await Promise.all(workers);
+		return { synced, failed };
+	}
+
+	async pruneMissing(): Promise<string[]> {
+		let files = this.app.vault.getFiles();
+		let existingPaths = new Set(files.map(f => f.path));
+		return this.state.pruneMissing(existingPaths);
 	}
 
 	private async runImport(
@@ -192,7 +335,15 @@ export class ImportService {
 			if (!recognized) {
 				throw new Error("Zotero recognition completed without a persisted paper record.");
 			}
-			let note = await this.literatureNotes.createOrUpdate(path, recognized);
+			let annotations = (settings.syncAnnotationsOnImport && result.attachmentKey)
+				? await this.client.getAnnotations(result.attachmentKey, { exportImages: settings.exportAnnotationImages })
+					.then(res => res.annotations)
+					.catch(error => {
+						console.warn(`Zotero Vault Bridge: Failed fetching annotations for ${path}`, error);
+						return undefined;
+					})
+				: undefined;
+			let note = await this.literatureNotes.createOrUpdate(path, recognized, annotations);
 			await this.state.markLiteratureNote(path, note.path);
 			await this.state.markComplete(path);
 			let record = this.state.get(path);

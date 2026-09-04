@@ -5,8 +5,11 @@ import {
 } from "obsidian";
 import type { PaperRecord } from "../papers/ImportState";
 import type { BridgeSettings } from "../settings";
+import type { ZoteroAnnotationItem } from "../zotero/ZoteroTypes";
 import {
 	literatureFrontmatter,
+	formatAnnotations,
+	updateManagedAnnotations,
 	isSafeCitationKey,
 	readFrontmatterScalar,
 	renderLiteratureTemplate,
@@ -20,7 +23,11 @@ export interface LiteratureNoteResult {
 }
 
 export interface LiteratureNoteWriter {
-	createOrUpdate(pdfPath: string, record: PaperRecord): Promise<LiteratureNoteResult>;
+	createOrUpdate(
+		pdfPath: string,
+		record: PaperRecord,
+		annotations?: ZoteroAnnotationItem[],
+	): Promise<LiteratureNoteResult>;
 }
 
 export class LiteratureNoteService implements LiteratureNoteWriter {
@@ -29,7 +36,11 @@ export class LiteratureNoteService implements LiteratureNoteWriter {
 		private readonly getSettings: () => BridgeSettings,
 	) {}
 
-	async createOrUpdate(pdfPath: string, record: PaperRecord): Promise<LiteratureNoteResult> {
+	async createOrUpdate(
+		pdfPath: string,
+		record: PaperRecord,
+		annotations?: ZoteroAnnotationItem[],
+	): Promise<LiteratureNoteResult> {
 		let context = this.context(pdfPath, record);
 		let settings = this.getSettings();
 		let notePath = normalizePath(`${settings.literatureFolder}/${context.citationKey}.md`);
@@ -54,6 +65,12 @@ export class LiteratureNoteService implements LiteratureNoteWriter {
 		}
 
 		let updated = updateManagedFrontmatter(content, literatureFrontmatter(context));
+		if (Array.isArray(annotations)) {
+			await this.saveAnnotationImages(settings.literatureFolder, context.citationKey, annotations);
+			let formatted = formatAnnotations(annotations, context.citationKey);
+			updated = updateManagedAnnotations(updated, formatted);
+		}
+
 		if (existing instanceof TFile) {
 			if (updated !== content) {
 				await this.app.vault.modify(existing, updated);
@@ -65,6 +82,46 @@ export class LiteratureNoteService implements LiteratureNoteWriter {
 		}
 
 		return { path: notePath, created };
+	}
+
+	private async saveAnnotationImages(
+		literatureFolder: string,
+		citationKey: string,
+		annotations: ZoteroAnnotationItem[],
+	): Promise<void> {
+		let imageAnnos = annotations.filter(a => a.type === "image" && a.imageBase64);
+		if (!imageAnnos.length) return;
+		let assetFolder = normalizePath(`${literatureFolder}/assets/${citationKey}`);
+		await this.ensureFolder(assetFolder);
+		for (let anno of imageAnnos) {
+			let assetPath = normalizePath(`${assetFolder}/${anno.key}.png`);
+			if (!anno.imageBase64) continue;
+			let binaryStr = atob(anno.imageBase64);
+			let bytes = new Uint8Array(binaryStr.length);
+			for (let i = 0; i < binaryStr.length; i++) {
+				bytes[i] = binaryStr.charCodeAt(i);
+			}
+			let existingFile = this.app.vault.getAbstractFileByPath(assetPath);
+			if (existingFile instanceof TFile) {
+				let existingBytes = await this.app.vault.readBinary(existingFile);
+				let existingBuf = new Uint8Array(existingBytes);
+				let changed = existingBuf.length !== bytes.length;
+				if (!changed) {
+					for (let i = 0; i < bytes.length; i++) {
+						if (existingBuf[i] !== bytes[i]) {
+							changed = true;
+							break;
+						}
+					}
+				}
+				if (changed) {
+					await this.app.vault.modifyBinary(existingFile, bytes.buffer);
+				}
+			}
+			else if (!existingFile) {
+				await this.app.vault.createBinary(assetPath, bytes.buffer);
+			}
+		}
 	}
 
 	private context(pdfPath: string, record: PaperRecord): LiteratureNoteContext {

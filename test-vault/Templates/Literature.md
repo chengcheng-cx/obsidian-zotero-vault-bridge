@@ -19,6 +19,11 @@ pdf: {{pdf_yaml}}
 
 {{abstract}}
 
+## Annotations
+
+<!-- BEGIN ANNOTATIONS -->
+<!-- END ANNOTATIONS -->
+
 ## Research Question
 
 ## Methodology

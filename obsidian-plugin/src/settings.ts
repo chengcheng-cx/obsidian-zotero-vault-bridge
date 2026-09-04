@@ -15,6 +15,8 @@ export interface BridgeSettings {
 	scanOnStartup: boolean;
 	enableCitationAutocomplete: boolean;
 	citationInsertionMode: CitationInsertionMode;
+	syncAnnotationsOnImport: boolean;
+	exportAnnotationImages: boolean;
 	zoteroEndpoint: string;
 	stablePollIntervalMs: number;
 	stableRequiredSamples: number;
@@ -30,6 +32,8 @@ export const DEFAULT_SETTINGS: BridgeSettings = {
 	scanOnStartup: true,
 	enableCitationAutocomplete: true,
 	citationInsertionMode: "literature-note-link",
+	syncAnnotationsOnImport: true,
+	exportAnnotationImages: true,
 	zoteroEndpoint: "http://localhost:23119",
 	stablePollIntervalMs: 750,
 	stableRequiredSamples: 3,
@@ -65,6 +69,12 @@ export function loadSettings(value: unknown): BridgeSettings {
 		citationInsertionMode: isCitationInsertionMode(candidate.citationInsertionMode)
 			? candidate.citationInsertionMode
 			: DEFAULT_SETTINGS.citationInsertionMode,
+		syncAnnotationsOnImport: typeof candidate.syncAnnotationsOnImport === "boolean"
+			? candidate.syncAnnotationsOnImport
+			: DEFAULT_SETTINGS.syncAnnotationsOnImport,
+		exportAnnotationImages: typeof candidate.exportAnnotationImages === "boolean"
+			? candidate.exportAnnotationImages
+			: DEFAULT_SETTINGS.exportAnnotationImages,
 		zoteroEndpoint: typeof candidate.zoteroEndpoint === "string"
 			? candidate.zoteroEndpoint.trim()
 			: DEFAULT_SETTINGS.zoteroEndpoint,
@@ -100,6 +110,8 @@ export interface SettingsHost {
 	testConnection(): Promise<void>;
 	scanPapers(includeFailed: boolean): Promise<void>;
 	syncLiteratureNotes(): Promise<void>;
+	syncAllAnnotations(): Promise<void>;
+	pruneMissingRecords(): Promise<void>;
 }
 
 export class BridgeSettingTab extends PluginSettingTab {
@@ -199,6 +211,20 @@ export class BridgeSettingTab extends PluginSettingTab {
 			});
 
 		new Setting(containerEl)
+			.setName("Sync annotations on import")
+			.setDesc("Automatically extract and sync PDF highlights and notes when importing a paper.")
+			.addToggle(toggle => toggle
+				.setValue(this.host.settings.syncAnnotationsOnImport)
+				.onChange(async value => this.host.updateSettings({ syncAnnotationsOnImport: value })));
+
+		new Setting(containerEl)
+			.setName("Export annotation images")
+			.setDesc("Save area highlight screenshots as PNG files inside the Literature Notes assets folder.")
+			.addToggle(toggle => toggle
+				.setValue(this.host.settings.exportAnnotationImages)
+				.onChange(async value => this.host.updateSettings({ exportAnnotationImages: value })));
+
+		new Setting(containerEl)
 			.setName("Test connection")
 			.setDesc("Pair this Vault root and verify the Companion.")
 			.addButton(button => button
@@ -225,5 +251,19 @@ export class BridgeSettingTab extends PluginSettingTab {
 			.addButton(button => button
 				.setButtonText("Sync")
 				.onClick(async () => this.host.syncLiteratureNotes()));
+
+		new Setting(containerEl)
+			.setName("Sync all annotations")
+			.setDesc("Sync annotations for all recognized Literature Notes with controlled concurrency.")
+			.addButton(button => button
+				.setButtonText("Sync all")
+				.onClick(async () => this.host.syncAllAnnotations()));
+
+		new Setting(containerEl)
+			.setName("Prune missing records")
+			.setDesc("Clean up tracked state records whose PDF files no longer exist in the vault.")
+			.addButton(button => button
+				.setButtonText("Prune")
+				.onClick(async () => this.host.pruneMissingRecords()));
 	}
 }

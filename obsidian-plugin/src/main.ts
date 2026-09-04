@@ -117,6 +117,50 @@ export default class ZoteroVaultBridgePlugin extends Plugin implements SettingsH
 		new Notice(`Literature Note sync complete: ${result.imported} updated, ${result.failed} failed, ${result.discovered} PDFs found.`);
 	}
 
+	async syncActiveAnnotations(file: TFile): Promise<void> {
+		try {
+			new Notice("Syncing annotations from Zotero…");
+			let res = await this.importer.syncAnnotations(file.path);
+			new Notice(`Annotations synced: ${res.count} items in ${res.path}`);
+		}
+		catch (error) {
+			new Notice(this.userMessage(error), 10_000);
+		}
+	}
+
+	async syncAllAnnotations(): Promise<void> {
+		let completed = this.state.allComplete().filter(r => r.status !== "missing");
+		if (!completed.length) {
+			new Notice("No recognized PDF records found to sync annotations.");
+			return;
+		}
+		let notice = new Notice(`[0/${completed.length}] Syncing annotations…`, 0);
+		try {
+			let res = await this.importer.syncAllAnnotationsWithPool(3, (done, total) => {
+				notice.setMessage(`[${done}/${total}] Syncing annotations…`);
+			});
+			notice.hide();
+			new Notice(`Annotation sync complete: ${res.synced} updated, ${res.failed} failed.`);
+		}
+		catch (err) {
+			notice.hide();
+			new Notice(this.userMessage(err), 10_000);
+		}
+	}
+
+	async pruneMissingRecords(): Promise<void> {
+		try {
+			new Notice("Pruning missing paper records…");
+			let pruned = await this.importer.pruneMissing();
+			new Notice(pruned.length
+				? `Pruned ${pruned.length} missing record${pruned.length === 1 ? "" : "s"} from state.`
+				: "No missing paper records found.");
+		}
+		catch (error) {
+			new Notice(this.userMessage(error), 10_000);
+		}
+	}
+
 	private addCommands(): void {
 		this.addCommand({
 			id: "test-zotero-connection",
@@ -169,6 +213,28 @@ export default class ZoteroVaultBridgePlugin extends Plugin implements SettingsH
 		});
 
 		this.addCommand({
+			id: "sync-active-annotations",
+			name: "Sync annotations for active Literature Note or PDF",
+			checkCallback: checking => {
+				let file = this.app.workspace.getActiveFile();
+				let available = file instanceof TFile && (
+					file.extension.toLocaleLowerCase("en-US") === "pdf"
+					|| Boolean(this.state.findByLiteratureNote(file.path))
+				);
+				if (available && !checking && file) {
+					void this.syncActiveAnnotations(file);
+				}
+				return available;
+			},
+		});
+
+		this.addCommand({
+			id: "sync-all-annotations",
+			name: "Sync all annotations",
+			callback: () => void this.syncAllAnnotations(),
+		});
+
+		this.addCommand({
 			id: "cancel-pending-imports",
 			name: "Cancel pending PDF imports",
 			callback: () => {
@@ -183,6 +249,12 @@ export default class ZoteroVaultBridgePlugin extends Plugin implements SettingsH
 			id: "initialize-vault-folders",
 			name: "Initialize bridge folders",
 			callback: () => void this.initializeFolders(),
+		});
+
+		this.addCommand({
+			id: "prune-missing-papers",
+			name: "Prune missing paper records from state",
+			callback: () => void this.pruneMissingRecords(),
 		});
 	}
 

@@ -1,4 +1,4 @@
-import { FileSystemAdapter, type App, type TFile } from "obsidian";
+import { FileSystemAdapter, TFile, type App } from "obsidian";
 import { describe, expect, it } from "vitest";
 import type { LiteratureNoteWriter } from "../src/literature/LiteratureNoteService";
 import {
@@ -20,6 +20,8 @@ function settings(): BridgeSettings {
 		scanOnStartup: true,
 		enableCitationAutocomplete: true,
 		citationInsertionMode: "literature-note-link",
+		syncAnnotationsOnImport: true,
+		exportAnnotationImages: true,
 		zoteroEndpoint: "http://localhost:23119",
 		stablePollIntervalMs: 1,
 		stableRequiredSamples: 1,
@@ -92,5 +94,406 @@ describe("ImportService reliability", () => {
 		await expect(operation).rejects.toBeInstanceOf(ImportCancelledError);
 		expect(state.get(file.path)?.status).toBe("failed");
 		expect(state.get(file.path)?.errorCode).toBe("import_cancelled");
+	});
+
+	it("syncs annotations for a completed paper record", async () => {
+		let state = new ImportStateStore({
+			"01_Papers/paper.pdf": {
+				path: "01_Papers/paper.pdf",
+				status: "complete",
+				attempts: 1,
+				updatedAt: "2026-01-01T00:00:00.000Z",
+				itemKey: "ITEM01",
+				attachmentKey: "ATTACH01",
+				literatureNote: "02_Literature/key.md",
+				metadata: {
+					itemType: "journalArticle",
+					title: "Paper",
+					creators: [],
+					date: "2026",
+					year: "2026",
+					publicationTitle: "",
+					doi: "",
+					abstractNote: "",
+					url: "",
+					citationKey: "key",
+				},
+				fingerprint: { size: 3, mtime: 1, sha256: SHA_ABC },
+			},
+		}, async () => undefined);
+
+		let client = {
+			getAnnotations: async () => ({
+				success: true as const,
+				attachmentKey: "ATTACH01",
+				itemKey: "ITEM01",
+				annotations: [
+					{
+						key: "ANNO01",
+						type: "highlight",
+						text: "Highlighted quote",
+						comment: "Note",
+						color: "#ffd400",
+						colorCategory: "yellow" as const,
+						pageLabel: "1",
+						sortIndex: "00001",
+						tags: [],
+						selectUri: "zotero://select/library/items/ANNO01",
+						openPdfUri: "zotero://open-pdf/library/items/ATTACH01?page=1&annotation=ANNO01",
+					},
+				],
+			}),
+		};
+
+		let writtenAnnotations: unknown[] = [];
+		let notes: LiteratureNoteWriter = {
+			createOrUpdate: async (_path, _record, annos) => {
+				writtenAnnotations = annos || [];
+				return { path: "02_Literature/key.md", created: false };
+			},
+		};
+
+		let app = { vault: { adapter: adapter(1) } } as unknown as App;
+		let importer = new ImportService(
+			app,
+			state,
+			client as unknown as ZoteroBridgeClient,
+			notes,
+			settings,
+			() => "C:\\Vault",
+		);
+
+		let res = await importer.syncAnnotations("01_Papers/paper.pdf");
+		expect(res.count).toBe(1);
+		expect(res.path).toBe("02_Literature/key.md");
+		expect(writtenAnnotations.length).toBe(1);
+	});
+
+	it("recovers state from literature note frontmatter and syncs annotations", async () => {
+		let state = new ImportStateStore({}, async () => undefined);
+		let client = {
+			ensureConfigured: async () => ({ configured: true, authenticated: true }),
+			getItemMetadata: async () => ({
+				success: true as const,
+				itemKey: "ITEM02",
+				attachmentKey: "ATTACH02",
+				metadata: {
+					itemType: "journalArticle",
+					title: "Recovered Paper",
+					creators: [{ firstName: "Ada", lastName: "Lovelace", creatorType: "author" }],
+					date: "2026",
+					year: "2026",
+					publicationTitle: "Science",
+					doi: "10.1234/test",
+					abstractNote: "Abstract text",
+					url: "",
+					citationKey: "lovelace2026recovered",
+				},
+				selectUri: "zotero://select/library/items/ITEM02",
+			}),
+			getAnnotations: async () => ({
+				success: true as const,
+				attachmentKey: "ATTACH02",
+				itemKey: "ITEM02",
+				annotations: [],
+			}),
+		};
+
+		let noteContent = [
+			"---",
+			"type: literature",
+			"title: Recovered Paper",
+			"citation_key: lovelace2026recovered",
+			"zotero_item_key: ITEM02",
+			"zotero_attachment_key: ATTACH02",
+			"pdf: \"[[01_Papers/recovered.pdf]]\"",
+			"---",
+			"# Note",
+		].join("\n");
+
+		let noteFile = Object.assign(new TFile(), {
+			path: "02_Literature/lovelace2026recovered.md",
+			extension: "md",
+		});
+
+		let app = {
+			vault: {
+				adapter: adapter(1),
+				read: async () => noteContent,
+				getAbstractFileByPath: (p: string) => {
+					if (p === "02_Literature/lovelace2026recovered.md") return noteFile;
+					return null;
+				},
+				getFiles: () => [noteFile],
+			},
+		} as unknown as App;
+
+		let notes: LiteratureNoteWriter = {
+			createOrUpdate: async () => ({ path: "02_Literature/lovelace2026recovered.md", created: false }),
+		};
+
+		let importer = new ImportService(
+			app,
+			state,
+			client as unknown as ZoteroBridgeClient,
+			notes,
+			settings,
+			() => "C:\\Vault",
+		);
+
+		let res = await importer.syncAnnotations("02_Literature/lovelace2026recovered.md");
+		expect(res.count).toBe(0);
+		expect(state.get("01_Papers/recovered.pdf")?.status).toBe("missing");
+		expect(state.get("01_Papers/recovered.pdf")?.itemKey).toBe("ITEM02");
+		expect(state.get("01_Papers/recovered.pdf")?.metadata?.title).toBe("Recovered Paper");
+	});
+
+	it("prunes missing records and syncs annotations with concurrency pool", async () => {
+		let state = new ImportStateStore({
+			"01_Papers/p1.pdf": {
+				path: "01_Papers/p1.pdf",
+				status: "complete",
+				attempts: 1,
+				updatedAt: "2026-01-01T00:00:00.000Z",
+				attachmentKey: "ATT1",
+				metadata: { itemType: "journalArticle", title: "P1", creators: [], date: "2026", year: "2026", publicationTitle: "", doi: "", abstractNote: "", url: "", citationKey: "p1" },
+			},
+			"01_Papers/p2.pdf": {
+				path: "01_Papers/p2.pdf",
+				status: "complete",
+				attempts: 1,
+				updatedAt: "2026-01-01T00:00:00.000Z",
+				attachmentKey: "ATT2",
+				metadata: { itemType: "journalArticle", title: "P2", creators: [], date: "2026", year: "2026", publicationTitle: "", doi: "", abstractNote: "", url: "", citationKey: "p2" },
+			},
+			"01_Papers/deleted.pdf": {
+				path: "01_Papers/deleted.pdf",
+				status: "missing",
+				attempts: 1,
+				updatedAt: "2026-01-01T00:00:00.000Z",
+				attachmentKey: "ATT3",
+			},
+		}, async () => undefined);
+
+		let client = {
+			getAnnotations: async () => ({
+				success: true as const,
+				attachmentKey: "ATT",
+				itemKey: "ITEM",
+				annotations: [],
+			}),
+		};
+
+		let notes: LiteratureNoteWriter = {
+			createOrUpdate: async () => ({ path: "02_Literature/p.md", created: false }),
+		};
+
+		let app = {
+			vault: {
+				adapter: adapter(1),
+				getFiles: () => [{ path: "01_Papers/p1.pdf" } as TFile, { path: "01_Papers/p2.pdf" } as TFile],
+				getAbstractFileByPath: () => null,
+			},
+		} as unknown as App;
+
+		let importer = new ImportService(
+			app,
+			state,
+			client as unknown as ZoteroBridgeClient,
+			notes,
+			settings,
+			() => "C:\\Vault",
+		);
+
+		let pruned = await importer.pruneMissing();
+		expect(pruned).toEqual(["01_Papers/deleted.pdf"]);
+		expect(state.get("01_Papers/deleted.pdf")).toBeUndefined();
+
+		let progressCount = 0;
+		let poolResult = await importer.syncAllAnnotationsWithPool(2, (done, total) => {
+			progressCount = done;
+			expect(total).toBe(2);
+		});
+		expect(poolResult.synced).toBe(2);
+		expect(poolResult.failed).toBe(0);
+		expect(progressCount).toBe(2);
+	});
+
+	it("passes undefined annotations to note writer when syncAnnotationsOnImport is disabled", async () => {
+		let state = new ImportStateStore({}, async () => undefined);
+		let client = {
+			ensureConfigured: async () => ({ configured: true, authenticated: true }),
+			importPdf: async () => ({
+				success: true as const,
+				alreadyImported: false,
+				replacedExisting: false,
+				itemKey: "ITEM01",
+				attachmentKey: "ATTACH01",
+				metadata: {
+					itemType: "journalArticle",
+					title: "Paper",
+					creators: [],
+					date: "2026",
+					year: "2026",
+					publicationTitle: "",
+					doi: "",
+					abstractNote: "",
+					url: "",
+					citationKey: "key",
+				},
+				selectUri: "zotero://select/library/items/ITEM01",
+			}),
+			getAnnotations: async () => {
+				throw new Error("getAnnotations should not be called when sync is disabled");
+			},
+		};
+
+		let passedAnnotations: unknown = "not_called";
+		let notes: LiteratureNoteWriter = {
+			createOrUpdate: async (_path, _record, annos) => {
+				passedAnnotations = annos;
+				return { path: "02_Literature/key.md", created: false };
+			},
+		};
+
+		let disabledSettings = () => ({
+			...settings(),
+			syncAnnotationsOnImport: false,
+		});
+
+		let app = { vault: { adapter: adapter(1) } } as unknown as App;
+		let importer = new ImportService(
+			app,
+			state,
+			client as unknown as ZoteroBridgeClient,
+			notes,
+			disabledSettings,
+			() => "C:\\Vault",
+		);
+
+		let file = { path: "01_Papers/paper.pdf" } as TFile;
+		let result = await importer.importFile(file);
+
+		expect(result.status).toBe("complete");
+		expect(passedAnnotations).toBeUndefined();
+	});
+
+	it("passes undefined annotations and preserves import when annotation fetch fails", async () => {
+		let state = new ImportStateStore({}, async () => undefined);
+		let client = {
+			ensureConfigured: async () => ({ configured: true, authenticated: true }),
+			importPdf: async () => ({
+				success: true as const,
+				alreadyImported: false,
+				replacedExisting: false,
+				itemKey: "ITEM01",
+				attachmentKey: "ATTACH01",
+				metadata: {
+					itemType: "journalArticle",
+					title: "Paper",
+					creators: [],
+					date: "2026",
+					year: "2026",
+					publicationTitle: "",
+					doi: "",
+					abstractNote: "",
+					url: "",
+					citationKey: "key",
+				},
+				selectUri: "zotero://select/library/items/ITEM01",
+			}),
+			getAnnotations: async () => {
+				throw new Error("Zotero companion connection timed out");
+			},
+		};
+
+		let passedAnnotations: unknown = "not_called";
+		let notes: LiteratureNoteWriter = {
+			createOrUpdate: async (_path, _record, annos) => {
+				passedAnnotations = annos;
+				return { path: "02_Literature/key.md", created: false };
+			},
+		};
+
+		let app = { vault: { adapter: adapter(1) } } as unknown as App;
+		let importer = new ImportService(
+			app,
+			state,
+			client as unknown as ZoteroBridgeClient,
+			notes,
+			settings,
+			() => "C:\\Vault",
+		);
+
+		let file = { path: "01_Papers/paper.pdf" } as TFile;
+		let result = await importer.importFile(file);
+
+		expect(result.status).toBe("complete");
+		expect(passedAnnotations).toBeUndefined();
+	});
+
+	it("passes undefined annotations when relinking if annotation fetch fails", async () => {
+		let state = new ImportStateStore({
+			"01_Papers/old.pdf": {
+				path: "01_Papers/old.pdf",
+				status: "complete",
+				attempts: 1,
+				updatedAt: "2026-01-01T00:00:00.000Z",
+				itemKey: "ITEM01",
+				attachmentKey: "ATTACH01",
+				literatureNote: "02_Literature/key.md",
+				metadata: {
+					itemType: "journalArticle",
+					title: "Paper",
+					creators: [],
+					date: "2026",
+					year: "2026",
+					publicationTitle: "",
+					doi: "",
+					abstractNote: "",
+					url: "",
+					citationKey: "key",
+				},
+				fingerprint: { size: 3, mtime: 1, sha256: SHA_ABC },
+			},
+		}, async () => undefined);
+
+		let client = {
+			ensureConfigured: async () => ({ configured: true, authenticated: true }),
+			relinkPdf: async () => ({
+				success: true as const,
+				attachmentKey: "ATTACH01",
+				itemKey: "ITEM01",
+				oldPath: "C:\\Vault\\01_Papers\\old.pdf",
+				newPath: "C:\\Vault\\01_Papers\\new.pdf",
+			}),
+			getAnnotations: async () => {
+				throw new Error("Companion temporary failure");
+			},
+		};
+
+		let passedAnnotations: unknown = "not_called";
+		let notes: LiteratureNoteWriter = {
+			createOrUpdate: async (_path, _record, annos) => {
+				passedAnnotations = annos;
+				return { path: "02_Literature/key.md", created: false };
+			},
+		};
+
+		let app = { vault: { adapter: adapter(1) } } as unknown as App;
+		let importer = new ImportService(
+			app,
+			state,
+			client as unknown as ZoteroBridgeClient,
+			notes,
+			settings,
+			() => "C:\\Vault",
+		);
+
+		let newFile = { path: "01_Papers/new.pdf" } as TFile;
+		let result = await importer.relinkFile(newFile, "01_Papers/old.pdf");
+
+		expect(result.status).toBe("complete");
+		expect(passedAnnotations).toBeUndefined();
 	});
 });

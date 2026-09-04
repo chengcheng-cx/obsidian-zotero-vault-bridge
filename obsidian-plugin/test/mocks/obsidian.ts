@@ -1,5 +1,15 @@
 export class App {}
 
+export class TAbstractFile {
+	path = "";
+}
+
+export class TFile extends TAbstractFile {
+	extension = "";
+	basename = "";
+	stat = { size: 0, mtime: 0, ctime: 0 };
+}
+
 export class FileSystemAdapter {}
 
 export class PluginSettingTab {

@@ -8,8 +8,8 @@
     "zotero": {
       "id": "zotero-vault-bridge@example.local",
       "update_url": "https://github.com/chengcheng-cx/obsidian-zotero-vault-bridge/releases/latest/download/updates.json",
-      "strict_min_version": "10.0",
-      "strict_max_version": "10.0.*"
+      "strict_min_version": "7.0",
+      "strict_max_version": "10.*"
     }
   }
 }
