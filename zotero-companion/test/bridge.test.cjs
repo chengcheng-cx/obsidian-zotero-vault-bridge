@@ -91,6 +91,26 @@ function createHarness({
 						annotationSortIndex: "00001|000005",
 						getTags() { return []; },
 					},
+					{
+						key: "ANNO0003",
+						annotationType: "highlight",
+						annotationText: "Magenta insight",
+						annotationComment: "",
+						annotationColor: "#e56eee",
+						annotationPageLabel: "3",
+						annotationSortIndex: "00003|000001",
+						getTags() { return []; },
+					},
+					{
+						key: "ANNO0004",
+						annotationType: "highlight",
+						annotationText: "Gray insight",
+						annotationComment: "",
+						annotationColor: "#aaaaaa",
+						annotationPageLabel: "4",
+						annotationSortIndex: "00004|000001",
+						getTags() { return []; },
+					},
 				];
 			},
 		};
@@ -193,6 +213,7 @@ function createHarness({
 		vaultRoot,
 		pdfPath,
 		renamedPdfPath,
+		parent,
 		attachment,
 		attachmentCount: () => attachments.length,
 		counts: () => ({ linkCalls, recognizeCalls, citationSaveCalls }),
@@ -514,7 +535,7 @@ test("fetches and sorts annotations with semantic colors and deep links", async 
 	assert.equal(res[0], 200);
 	const data = JSON.parse(res[2]);
 	assert.equal(data.success, true);
-	assert.equal(data.annotations.length, 2);
+	assert.equal(data.annotations.length, 4);
 	assert.equal(data.annotations[0].key, "ANNO0001");
 	assert.equal(data.annotations[0].pageLabel, "1");
 	assert.equal(data.annotations[0].colorCategory, "yellow");
@@ -523,4 +544,45 @@ test("fetches and sorts annotations with semantic colors and deep links", async 
 	assert.equal(data.annotations[1].pageLabel, "2");
 	assert.equal(data.annotations[1].colorCategory, "red");
 	assert.deepEqual(data.annotations[1].tags, ["critical"]);
+	assert.equal(data.annotations[2].key, "ANNO0003");
+	assert.equal(data.annotations[2].colorCategory, "purple");
+	assert.equal(data.annotations[3].key, "ANNO0004");
+	assert.equal(data.annotations[3].colorCategory, "gray");
+});
+
+test("fetches authoritative item metadata for state recovery", async () => {
+	const harness = createHarness();
+	const token = "d".repeat(64);
+	await harness.context.VaultBridge.startup({ version: "0.5.0" });
+
+	const Configure = harness.Zotero.Server.Endpoints["/zotero-vault-bridge/configure"];
+	await new Configure().init({
+		headers: { "x-zotero-vault-bridge-token": token },
+		data: { vaultRoot: harness.vaultRoot },
+	});
+
+	await harness.Zotero.Attachments.linkFromFile({ file: harness.pdfPath });
+	harness.attachment.parentID = harness.parent.id;
+
+	const ItemMetadata = harness.Zotero.Server.Endpoints["/zotero-vault-bridge/items/metadata"];
+	const resByItem = await new ItemMetadata().init({
+		headers: { "x-zotero-vault-bridge-token": token },
+		data: { itemKey: harness.parent.key },
+	});
+	assert.equal(resByItem[0], 200);
+	const data = JSON.parse(resByItem[2]);
+	assert.equal(data.success, true);
+	assert.equal(data.itemKey, "ITEM0001");
+	assert.equal(data.metadata.title, "Recognized Paper");
+	assert.equal(data.metadata.citationKey, "lovelace2026recognized");
+	assert.equal(data.metadata.creators[0].lastName, "Lovelace");
+
+	const resByAtt = await new ItemMetadata().init({
+		headers: { "x-zotero-vault-bridge-token": token },
+		data: { attachmentKey: harness.attachment.key },
+	});
+	assert.equal(resByAtt[0], 200);
+	const attData = JSON.parse(resByAtt[2]);
+	assert.equal(attData.itemKey, "ITEM0001");
+	assert.equal(attData.attachmentKey, harness.attachment.key);
 });

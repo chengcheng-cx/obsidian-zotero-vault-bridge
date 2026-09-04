@@ -122,6 +122,17 @@ export class ZoteroBridgeClient {
 		);
 	}
 
+	async getItemMetadata(keys: {
+		itemKey?: string;
+		attachmentKey?: string;
+	}): Promise<ImportResult> {
+		return this.request<ImportResult>(
+			"/zotero-vault-bridge/items/metadata",
+			"POST",
+			keys,
+		);
+	}
+
 	private async request<T>(route: string, method: "GET" | "POST", body?: object): Promise<T> {
 		let endpoint: string;
 		try {

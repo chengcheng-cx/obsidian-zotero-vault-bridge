@@ -209,6 +209,13 @@ function yamlString(value: string): string {
 	return JSON.stringify(value.replace(/\r?\n/g, " "));
 }
 
+export class MalformedAnnotationMarkersError extends Error {
+	constructor(message = "Annotation markers in this note are malformed (unpaired tags). Modification was aborted to protect hand-written notes.") {
+		super(message);
+		this.name = "MalformedAnnotationMarkersError";
+	}
+}
+
 export const ANNOTATIONS_START = "<!-- BEGIN ANNOTATIONS -->";
 export const ANNOTATIONS_END = "<!-- END ANNOTATIONS -->";
 const ANNOTATIONS_GUARD = "<!-- ⚠️ 此區塊由 Zotero 同步維護，手動編輯將在下次同步時被覆寫，個人心得請撰寫於區塊之外 -->";
@@ -220,6 +227,7 @@ const CALLOUT_MAP: Record<string, string> = {
 	blue: "note",
 	purple: "question",
 	orange: "warning",
+	gray: "note",
 };
 
 export function formatAnnotations(annotations: ZoteroAnnotationItem[], citationKey: string): string {
@@ -272,7 +280,14 @@ export function updateManagedAnnotations(content: string, renderedAnnotationsBlo
 	let startIndex = body.indexOf(ANNOTATIONS_START);
 	let endIndex = body.indexOf(ANNOTATIONS_END);
 
-	if (startIndex >= 0 && endIndex >= startIndex) {
+	let hasStart = startIndex >= 0;
+	let hasEnd = endIndex >= 0;
+
+	if (hasStart !== hasEnd || (hasStart && hasEnd && endIndex < startIndex)) {
+		throw new MalformedAnnotationMarkersError();
+	}
+
+	if (hasStart && hasEnd) {
 		let before = body.slice(0, startIndex);
 		let after = body.slice(endIndex + ANNOTATIONS_END.length);
 		let newBody = before + renderedAnnotationsBlock + after;

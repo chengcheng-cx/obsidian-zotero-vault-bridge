@@ -82,4 +82,48 @@ describe("ImportStateStore", () => {
 		expect(store.get("01_Papers/old.pdf")).toBeDefined();
 		expect(store.get("01_Papers/new.pdf")).toBeDefined();
 	});
+
+	it("supports markMissing, delete, pruneMissing, and registerRecovered", async () => {
+		let persisted = 0;
+		let store = new ImportStateStore({
+			"01_Papers/a.pdf": {
+				path: "01_Papers/a.pdf",
+				status: "complete",
+				attempts: 1,
+				updatedAt: "2026-01-01T00:00:00.000Z",
+			},
+			"01_Papers/b.pdf": {
+				path: "01_Papers/b.pdf",
+				status: "complete",
+				attempts: 1,
+				updatedAt: "2026-01-01T00:00:00.000Z",
+			},
+		}, async () => { persisted += 1; });
+
+		await store.markMissing("01_Papers/a.pdf");
+		expect(store.get("01_Papers/a.pdf")?.status).toBe("missing");
+		expect(store.needsImport("01_Papers/a.pdf", false)).toBe(false);
+		expect(store.needsImport("01_Papers/a.pdf", false, { size: 10, mtime: 20 })).toBe(true);
+
+		let deleted = await store.delete("01_Papers/a.pdf");
+		expect(deleted).toBe(true);
+		expect(store.get("01_Papers/a.pdf")).toBeUndefined();
+
+		let notDeleted = await store.delete("01_Papers/nonexistent.pdf");
+		expect(notDeleted).toBe(false);
+
+		let pruned = await store.pruneMissing(new Set());
+		expect(pruned).toEqual(["01_Papers/b.pdf"]);
+		expect(store.get("01_Papers/b.pdf")).toBeUndefined();
+
+		await store.registerRecovered({
+			path: "01_Papers/recovered.pdf",
+			status: "complete",
+			attempts: 1,
+			updatedAt: "2026-01-01T00:00:00.000Z",
+			itemKey: "ITEM0001",
+		});
+		expect(store.get("01_Papers/recovered.pdf")?.itemKey).toBe("ITEM0001");
+		expect(persisted).toBeGreaterThan(0);
+	});
 });

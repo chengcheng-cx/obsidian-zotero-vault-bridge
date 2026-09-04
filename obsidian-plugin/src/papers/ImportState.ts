@@ -5,7 +5,7 @@ import {
 	type FileFingerprint,
 } from "./fingerprint";
 
-export type PaperStatus = "new" | "processing" | "recognized" | "complete" | "failed";
+export type PaperStatus = "new" | "processing" | "recognized" | "complete" | "failed" | "missing";
 
 export interface PaperRecord {
 	path: string;
@@ -30,6 +30,7 @@ const STATUSES = new Set<PaperStatus>([
 	"recognized",
 	"complete",
 	"failed",
+	"missing",
 ]);
 
 function timestamp(): string {
@@ -94,6 +95,9 @@ export class ImportStateStore {
 		let record = this.records[path];
 		if (!record) {
 			return true;
+		}
+		if (record.status === "missing") {
+			return Boolean(currentStat);
 		}
 		if (record.status === "complete") {
 			return !record.literatureNote
@@ -231,6 +235,50 @@ export class ImportStateStore {
 			updatedAt: timestamp(),
 			errorCode: code,
 			errorMessage: message,
+		};
+		await this.persist();
+	}
+
+	async markMissing(path: string): Promise<void> {
+		let existing = this.records[path];
+		if (!existing) {
+			return;
+		}
+		this.records[path] = {
+			...existing,
+			status: "missing",
+			updatedAt: timestamp(),
+		};
+		await this.persist();
+	}
+
+	async delete(path: string): Promise<boolean> {
+		if (this.records[path]) {
+			delete this.records[path];
+			await this.persist();
+			return true;
+		}
+		return false;
+	}
+
+	async pruneMissing(existingPaths: Set<string>): Promise<string[]> {
+		let pruned: string[] = [];
+		for (let path of Object.keys(this.records)) {
+			if (!existingPaths.has(path)) {
+				delete this.records[path];
+				pruned.push(path);
+			}
+		}
+		if (pruned.length) {
+			await this.persist();
+		}
+		return pruned;
+	}
+
+	async registerRecovered(record: PaperRecord): Promise<void> {
+		this.records[record.path] = {
+			...record,
+			updatedAt: timestamp(),
 		};
 		await this.persist();
 	}

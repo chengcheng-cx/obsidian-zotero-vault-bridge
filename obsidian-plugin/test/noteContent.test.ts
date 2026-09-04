@@ -3,6 +3,7 @@ import {
 	literatureFrontmatter,
 	formatAnnotations,
 	updateManagedAnnotations,
+	MalformedAnnotationMarkersError,
 	isSafeCitationKey,
 	readFrontmatterScalar,
 	renderLiteratureTemplate,
@@ -181,5 +182,58 @@ describe("Literature Note content", () => {
 
 		expect(updated).toContain("## Abstract\nThe abstract text.\n\n## Annotations\n\n" + block);
 		expect(updated).toContain("## Research Question\nMy question.");
+	});
+
+	it("throws MalformedAnnotationMarkersError when annotation tags are unpaired to protect user notes", () => {
+		let brokenBeginOnly = [
+			"## Annotations",
+			"<!-- BEGIN ANNOTATIONS -->",
+			"Some annotations",
+			"",
+			"## My precious notes that must never be deleted",
+		].join("\n");
+
+		let block = formatAnnotations([], "key1");
+		expect(() => updateManagedAnnotations(brokenBeginOnly, block))
+			.toThrow(MalformedAnnotationMarkersError);
+
+		let brokenEndOnly = [
+			"## Annotations",
+			"Some annotations",
+			"<!-- END ANNOTATIONS -->",
+			"",
+			"## My notes",
+		].join("\n");
+
+		expect(() => updateManagedAnnotations(brokenEndOnly, block))
+			.toThrow(MalformedAnnotationMarkersError);
+
+		let invertedTags = [
+			"<!-- END ANNOTATIONS -->",
+			"content",
+			"<!-- BEGIN ANNOTATIONS -->",
+		].join("\n");
+
+		expect(() => updateManagedAnnotations(invertedTags, block))
+			.toThrow(MalformedAnnotationMarkersError);
+	});
+
+	it("formats gray annotations as note callouts", () => {
+		let grayAnno = {
+			key: "ANNO_GRAY",
+			type: "highlight" as const,
+			text: "Gray highlighted insight",
+			comment: "",
+			color: "#aaaaaa",
+			colorCategory: "gray" as const,
+			pageLabel: "5",
+			sortIndex: "00005",
+			tags: [],
+			selectUri: "zotero://select",
+			openPdfUri: "zotero://open-pdf",
+		};
+		let block = formatAnnotations([grayAnno], "key1");
+		expect(block).toContain("> [!note]+ p. 5 ([Zotero](zotero://open-pdf))");
+		expect(block).toContain("> Gray highlighted insight");
 	});
 });

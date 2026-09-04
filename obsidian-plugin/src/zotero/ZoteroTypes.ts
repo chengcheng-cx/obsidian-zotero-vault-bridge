@@ -70,7 +70,7 @@ export interface BridgeErrorPayload {
 	message: string;
 }
 
-export type AnnotationColorCategory = "yellow" | "red" | "green" | "blue" | "purple" | "orange" | "other";
+export type AnnotationColorCategory = "yellow" | "red" | "green" | "blue" | "purple" | "orange" | "gray" | "other";
 
 export interface ZoteroAnnotationItem {
 	key: string;

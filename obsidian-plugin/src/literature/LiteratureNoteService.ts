@@ -95,12 +95,30 @@ export class LiteratureNoteService implements LiteratureNoteWriter {
 		await this.ensureFolder(assetFolder);
 		for (let anno of imageAnnos) {
 			let assetPath = normalizePath(`${assetFolder}/${anno.key}.png`);
-			if (!this.app.vault.getAbstractFileByPath(assetPath) && anno.imageBase64) {
-				let binaryStr = atob(anno.imageBase64);
-				let bytes = new Uint8Array(binaryStr.length);
-				for (let i = 0; i < binaryStr.length; i++) {
-					bytes[i] = binaryStr.charCodeAt(i);
+			if (!anno.imageBase64) continue;
+			let binaryStr = atob(anno.imageBase64);
+			let bytes = new Uint8Array(binaryStr.length);
+			for (let i = 0; i < binaryStr.length; i++) {
+				bytes[i] = binaryStr.charCodeAt(i);
+			}
+			let existingFile = this.app.vault.getAbstractFileByPath(assetPath);
+			if (existingFile instanceof TFile) {
+				let existingBytes = await this.app.vault.readBinary(existingFile);
+				let existingBuf = new Uint8Array(existingBytes);
+				let changed = existingBuf.length !== bytes.length;
+				if (!changed) {
+					for (let i = 0; i < bytes.length; i++) {
+						if (existingBuf[i] !== bytes[i]) {
+							changed = true;
+							break;
+						}
+					}
 				}
+				if (changed) {
+					await this.app.vault.modifyBinary(existingFile, bytes.buffer);
+				}
+			}
+			else if (!existingFile) {
 				await this.app.vault.createBinary(assetPath, bytes.buffer);
 			}
 		}

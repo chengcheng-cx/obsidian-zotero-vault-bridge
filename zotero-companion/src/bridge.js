@@ -11,6 +11,7 @@ var VaultBridge = new function () {
 		citationSearch: "/zotero-vault-bridge/citations/search",
 		citationResolve: "/zotero-vault-bridge/citations/resolve",
 		annotations: "/zotero-vault-bridge/annotations",
+		itemMetadata: "/zotero-vault-bridge/items/metadata",
 	};
 
 	let pluginVersion = "0.0.0";
@@ -619,8 +620,9 @@ var VaultBridge = new function () {
 		if (clean.startsWith("#ff6") || clean.startsWith("#e0") || clean.startsWith("#d3") || clean.startsWith("#f44")) return "red";
 		if (clean.startsWith("#5f") || clean.startsWith("#2e7") || clean.startsWith("#4c") || clean.startsWith("#00a")) return "green";
 		if (clean.startsWith("#2e") || clean.startsWith("#197") || clean.startsWith("#219") || clean.startsWith("#007")) return "blue";
-		if (clean.startsWith("#a2") || clean.startsWith("#9c2") || clean.startsWith("#673") || clean.startsWith("#7e5")) return "purple";
+		if (clean.startsWith("#a2") || clean.startsWith("#9c2") || clean.startsWith("#673") || clean.startsWith("#7e5") || clean.startsWith("#e56") || clean.startsWith("#ff14")) return "purple";
 		if (clean.startsWith("#f19") || clean.startsWith("#ff9") || clean.startsWith("#ffb") || clean.startsWith("#f57")) return "orange";
+		if (clean.startsWith("#aaa") || clean.startsWith("#888") || clean.startsWith("#999") || clean.startsWith("#777")) return "gray";
 		return "yellow";
 	}
 
@@ -685,6 +687,61 @@ var VaultBridge = new function () {
 		};
 	}
 
+	async function getItemAuthoritativeMetadata(rawItemKey, rawAttachmentKey) {
+		let item = null;
+		let attachment = null;
+
+		if (rawAttachmentKey) {
+			try {
+				attachment = await findAttachmentByKey(rawAttachmentKey);
+				if (attachment.parentID) {
+					item = await Zotero.Items.getAsync(attachment.parentID);
+				}
+			}
+			catch (err) {}
+		}
+
+		if (!item && rawItemKey) {
+			let itemKey = String(rawItemKey || "").trim().toUpperCase();
+			if (/^[A-Z0-9]{8}$/.test(itemKey)) {
+				let itemIDs = await Zotero.DB.columnQueryAsync(
+					"SELECT I.itemID FROM items I "
+						+ "LEFT JOIN deletedItems DI ON DI.itemID = I.itemID "
+						+ "WHERE I.libraryID = ? AND I.key = ? AND DI.itemID IS NULL",
+					[Zotero.Libraries.userLibraryID, itemKey]
+				);
+				item = itemIDs.length ? await Zotero.Items.getAsync(itemIDs[0]) : null;
+			}
+		}
+
+		if (!isRegularBibliographicItem(item)) {
+			throw new BridgeError(404, "item_not_found", "The Zotero bibliographic item was not found.");
+		}
+
+		if (!attachment && typeof item.getAttachments === "function") {
+			let attachmentIDs = await item.getAttachments();
+			for (let id of attachmentIDs) {
+				let att = await Zotero.Items.getAsync(id);
+				if (att?.isAttachment?.() && att.attachmentLinkMode === Zotero.Attachments.LINK_MODE_LINKED_FILE) {
+					attachment = att;
+					break;
+				}
+			}
+		}
+
+		let metadata = bibliographicMetadata(item);
+		let citationKey = await ensureCitationKey(item, metadata, metadata.citationKey);
+		metadata.citationKey = citationKey;
+
+		return {
+			success: true,
+			itemKey: item.key,
+			attachmentKey: attachment?.key || "",
+			metadata,
+			selectUri: `zotero://select/library/items/${item.key}`,
+		};
+	}
+
 	function makeStatusEndpoint() {
 		return function StatusEndpoint() {};
 	}
@@ -715,6 +772,10 @@ var VaultBridge = new function () {
 
 	function makeAnnotationsEndpoint() {
 		return function AnnotationsEndpoint() {};
+	}
+
+	function makeItemMetadataEndpoint() {
+		return function ItemMetadataEndpoint() {};
 	}
 
 	this.startup = async function ({ version }) {
@@ -888,6 +949,25 @@ var VaultBridge = new function () {
 			},
 		};
 
+		endpointTypes.itemMetadata = makeItemMetadataEndpoint();
+		endpointTypes.itemMetadata.prototype = {
+			supportedMethods: ["POST"],
+			supportedDataTypes: ["application/json"],
+			init: async function (requestData) {
+				try {
+					requireValidToken(requestData);
+					let result = await getItemAuthoritativeMetadata(
+						requestData.data?.itemKey,
+						requestData.data?.attachmentKey,
+					);
+					return response(200, result);
+				}
+				catch (error) {
+					return errorResponse(error);
+				}
+			},
+		};
+
 		Zotero.Server.Endpoints[ENDPOINTS.status] = endpointTypes.status;
 		Zotero.Server.Endpoints[ENDPOINTS.configure] = endpointTypes.configure;
 		Zotero.Server.Endpoints[ENDPOINTS.import] = endpointTypes.import;
@@ -896,6 +976,7 @@ var VaultBridge = new function () {
 		Zotero.Server.Endpoints[ENDPOINTS.citationSearch] = endpointTypes.citationSearch;
 		Zotero.Server.Endpoints[ENDPOINTS.citationResolve] = endpointTypes.citationResolve;
 		Zotero.Server.Endpoints[ENDPOINTS.annotations] = endpointTypes.annotations;
+		Zotero.Server.Endpoints[ENDPOINTS.itemMetadata] = endpointTypes.itemMetadata;
 		log("Registered localhost endpoints");
 	};
 

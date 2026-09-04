@@ -129,25 +129,36 @@ export default class ZoteroVaultBridgePlugin extends Plugin implements SettingsH
 	}
 
 	async syncAllAnnotations(): Promise<void> {
-		let completed = this.state.allComplete();
+		let completed = this.state.allComplete().filter(r => r.status !== "missing");
 		if (!completed.length) {
 			new Notice("No recognized PDF records found to sync annotations.");
 			return;
 		}
-		new Notice(`Syncing annotations for ${completed.length} literature notes…`);
-		let synced = 0;
-		let failed = 0;
-		for (let record of completed) {
-			try {
-				await this.importer.syncAnnotations(record.path);
-				synced += 1;
-			}
-			catch (err) {
-				failed += 1;
-				console.error(`Failed syncing annotations for ${record.path}:`, err);
-			}
+		let notice = new Notice(`[0/${completed.length}] Syncing annotations…`, 0);
+		try {
+			let res = await this.importer.syncAllAnnotationsWithPool(3, (done, total) => {
+				notice.setMessage(`[${done}/${total}] Syncing annotations…`);
+			});
+			notice.hide();
+			new Notice(`Annotation sync complete: ${res.synced} updated, ${res.failed} failed.`);
 		}
-		new Notice(`Annotation sync complete: ${synced} updated, ${failed} failed.`);
+		catch (err) {
+			notice.hide();
+			new Notice(this.userMessage(err), 10_000);
+		}
+	}
+
+	async pruneMissingRecords(): Promise<void> {
+		try {
+			new Notice("Pruning missing paper records…");
+			let pruned = await this.importer.pruneMissing();
+			new Notice(pruned.length
+				? `Pruned ${pruned.length} missing record${pruned.length === 1 ? "" : "s"} from state.`
+				: "No missing paper records found.");
+		}
+		catch (error) {
+			new Notice(this.userMessage(error), 10_000);
+		}
 	}
 
 	private addCommands(): void {
@@ -238,6 +249,12 @@ export default class ZoteroVaultBridgePlugin extends Plugin implements SettingsH
 			id: "initialize-vault-folders",
 			name: "Initialize bridge folders",
 			callback: () => void this.initializeFolders(),
+		});
+
+		this.addCommand({
+			id: "prune-missing-papers",
+			name: "Prune missing paper records from state",
+			callback: () => void this.pruneMissingRecords(),
 		});
 	}
 
