@@ -318,4 +318,182 @@ describe("ImportService reliability", () => {
 		expect(poolResult.failed).toBe(0);
 		expect(progressCount).toBe(2);
 	});
+
+	it("passes undefined annotations to note writer when syncAnnotationsOnImport is disabled", async () => {
+		let state = new ImportStateStore({}, async () => undefined);
+		let client = {
+			ensureConfigured: async () => ({ configured: true, authenticated: true }),
+			importPdf: async () => ({
+				success: true as const,
+				alreadyImported: false,
+				replacedExisting: false,
+				itemKey: "ITEM01",
+				attachmentKey: "ATTACH01",
+				metadata: {
+					itemType: "journalArticle",
+					title: "Paper",
+					creators: [],
+					date: "2026",
+					year: "2026",
+					publicationTitle: "",
+					doi: "",
+					abstractNote: "",
+					url: "",
+					citationKey: "key",
+				},
+				selectUri: "zotero://select/library/items/ITEM01",
+			}),
+			getAnnotations: async () => {
+				throw new Error("getAnnotations should not be called when sync is disabled");
+			},
+		};
+
+		let passedAnnotations: unknown = "not_called";
+		let notes: LiteratureNoteWriter = {
+			createOrUpdate: async (_path, _record, annos) => {
+				passedAnnotations = annos;
+				return { path: "02_Literature/key.md", created: false };
+			},
+		};
+
+		let disabledSettings = () => ({
+			...settings(),
+			syncAnnotationsOnImport: false,
+		});
+
+		let app = { vault: { adapter: adapter(1) } } as unknown as App;
+		let importer = new ImportService(
+			app,
+			state,
+			client as unknown as ZoteroBridgeClient,
+			notes,
+			disabledSettings,
+			() => "C:\\Vault",
+		);
+
+		let file = { path: "01_Papers/paper.pdf" } as TFile;
+		let result = await importer.importFile(file);
+
+		expect(result.status).toBe("complete");
+		expect(passedAnnotations).toBeUndefined();
+	});
+
+	it("passes undefined annotations and preserves import when annotation fetch fails", async () => {
+		let state = new ImportStateStore({}, async () => undefined);
+		let client = {
+			ensureConfigured: async () => ({ configured: true, authenticated: true }),
+			importPdf: async () => ({
+				success: true as const,
+				alreadyImported: false,
+				replacedExisting: false,
+				itemKey: "ITEM01",
+				attachmentKey: "ATTACH01",
+				metadata: {
+					itemType: "journalArticle",
+					title: "Paper",
+					creators: [],
+					date: "2026",
+					year: "2026",
+					publicationTitle: "",
+					doi: "",
+					abstractNote: "",
+					url: "",
+					citationKey: "key",
+				},
+				selectUri: "zotero://select/library/items/ITEM01",
+			}),
+			getAnnotations: async () => {
+				throw new Error("Zotero companion connection timed out");
+			},
+		};
+
+		let passedAnnotations: unknown = "not_called";
+		let notes: LiteratureNoteWriter = {
+			createOrUpdate: async (_path, _record, annos) => {
+				passedAnnotations = annos;
+				return { path: "02_Literature/key.md", created: false };
+			},
+		};
+
+		let app = { vault: { adapter: adapter(1) } } as unknown as App;
+		let importer = new ImportService(
+			app,
+			state,
+			client as unknown as ZoteroBridgeClient,
+			notes,
+			settings,
+			() => "C:\\Vault",
+		);
+
+		let file = { path: "01_Papers/paper.pdf" } as TFile;
+		let result = await importer.importFile(file);
+
+		expect(result.status).toBe("complete");
+		expect(passedAnnotations).toBeUndefined();
+	});
+
+	it("passes undefined annotations when relinking if annotation fetch fails", async () => {
+		let state = new ImportStateStore({
+			"01_Papers/old.pdf": {
+				path: "01_Papers/old.pdf",
+				status: "complete",
+				attempts: 1,
+				updatedAt: "2026-01-01T00:00:00.000Z",
+				itemKey: "ITEM01",
+				attachmentKey: "ATTACH01",
+				literatureNote: "02_Literature/key.md",
+				metadata: {
+					itemType: "journalArticle",
+					title: "Paper",
+					creators: [],
+					date: "2026",
+					year: "2026",
+					publicationTitle: "",
+					doi: "",
+					abstractNote: "",
+					url: "",
+					citationKey: "key",
+				},
+				fingerprint: { size: 3, mtime: 1, sha256: SHA_ABC },
+			},
+		}, async () => undefined);
+
+		let client = {
+			ensureConfigured: async () => ({ configured: true, authenticated: true }),
+			relinkPdf: async () => ({
+				success: true as const,
+				attachmentKey: "ATTACH01",
+				itemKey: "ITEM01",
+				oldPath: "C:\\Vault\\01_Papers\\old.pdf",
+				newPath: "C:\\Vault\\01_Papers\\new.pdf",
+			}),
+			getAnnotations: async () => {
+				throw new Error("Companion temporary failure");
+			},
+		};
+
+		let passedAnnotations: unknown = "not_called";
+		let notes: LiteratureNoteWriter = {
+			createOrUpdate: async (_path, _record, annos) => {
+				passedAnnotations = annos;
+				return { path: "02_Literature/key.md", created: false };
+			},
+		};
+
+		let app = { vault: { adapter: adapter(1) } } as unknown as App;
+		let importer = new ImportService(
+			app,
+			state,
+			client as unknown as ZoteroBridgeClient,
+			notes,
+			settings,
+			() => "C:\\Vault",
+		);
+
+		let newFile = { path: "01_Papers/new.pdf" } as TFile;
+		let result = await importer.relinkFile(newFile, "01_Papers/old.pdf");
+
+		expect(result.status).toBe("complete");
+		expect(passedAnnotations).toBeUndefined();
+	});
 });

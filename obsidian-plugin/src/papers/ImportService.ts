@@ -136,8 +136,11 @@ export class ImportService {
 		let annotations = (settings.syncAnnotationsOnImport && moved.attachmentKey)
 			? await this.client.getAnnotations(moved.attachmentKey, { exportImages: settings.exportAnnotationImages })
 				.then(res => res.annotations)
-				.catch(() => [])
-			: [];
+				.catch(error => {
+					console.warn(`Zotero Vault Bridge: Failed fetching annotations for ${newPath}`, error);
+					return undefined;
+				})
+			: undefined;
 		let note = await this.literatureNotes.createOrUpdate(newPath, moved, annotations);
 		await this.state.markLiteratureNote(newPath, note.path);
 		await this.state.markComplete(newPath);
@@ -335,8 +338,11 @@ export class ImportService {
 			let annotations = (settings.syncAnnotationsOnImport && result.attachmentKey)
 				? await this.client.getAnnotations(result.attachmentKey, { exportImages: settings.exportAnnotationImages })
 					.then(res => res.annotations)
-					.catch(() => [])
-				: [];
+					.catch(error => {
+						console.warn(`Zotero Vault Bridge: Failed fetching annotations for ${path}`, error);
+						return undefined;
+					})
+				: undefined;
 			let note = await this.literatureNotes.createOrUpdate(path, recognized, annotations);
 			await this.state.markLiteratureNote(path, note.path);
 			await this.state.markComplete(path);

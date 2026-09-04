@@ -1,4 +1,8 @@
+import { TFile, type App } from "obsidian";
 import { describe, expect, it } from "vitest";
+import { LiteratureNoteService } from "../src/literature/LiteratureNoteService";
+import type { PaperRecord } from "../src/papers/ImportState";
+import type { BridgeSettings } from "../src/settings";
 import {
 	literatureFrontmatter,
 	formatAnnotations,
@@ -237,3 +241,153 @@ describe("Literature Note content", () => {
 		expect(block).toContain("> Gray highlighted insight");
 	});
 });
+
+function paperRecord(): PaperRecord {
+	return {
+		path: "01_Papers/paper.pdf",
+		status: "complete",
+		attempts: 1,
+		updatedAt: "2026-01-01T00:00:00.000Z",
+		itemKey: "ITEM0001",
+		attachmentKey: "ATTACH01",
+		selectUri: "zotero://select/library/items/ITEM0001",
+		literatureNote: "02_Literature/lovelace2026analytical.md",
+		metadata: {
+			itemType: "journalArticle",
+			title: "Analytical Engines & Notes",
+			creators: [{
+				firstName: "Ada",
+				lastName: "Lovelace",
+				name: "",
+				creatorType: "author",
+			}],
+			date: "2026",
+			year: "2026",
+			publicationTitle: "Test \"Journal\"",
+			doi: "10.0000/test",
+			abstractNote: "Generated abstract.",
+			url: "https://example.com",
+			citationKey: "lovelace2026analytical",
+		},
+	};
+}
+
+function testSettings(): BridgeSettings {
+	return {
+		papersFolder: "01_Papers",
+		literatureFolder: "02_Literature",
+		templatePath: "Templates/Literature.md",
+		watchForNewPdfs: true,
+		scanOnStartup: true,
+		enableCitationAutocomplete: true,
+		citationInsertionMode: "literature-note-link",
+		syncAnnotationsOnImport: true,
+		exportAnnotationImages: false,
+		zoteroEndpoint: "http://localhost:23119",
+		stablePollIntervalMs: 1,
+		stableRequiredSamples: 1,
+		stableTimeoutMs: 100,
+		recognitionTimeoutMs: 120_000,
+	};
+}
+
+describe("LiteratureNoteService annotation preservation", () => {
+	it("leaves existing annotation block untouched when annotations is undefined", async () => {
+		let noteContent = [
+			"---",
+			"type: literature",
+			'title: "Analytical Engines & Notes"',
+			'citation_key: "lovelace2026analytical"',
+			'zotero_item_key: "ITEM0001"',
+			'zotero_attachment_key: "ATTACH01"',
+			'pdf: "[[01_Papers/paper.pdf]]"',
+			"---",
+			"# Analytical Engines & Notes",
+			"",
+			"## Annotations",
+			"",
+			"<!-- BEGIN ANNOTATIONS -->",
+			"> [!quote]+ p. 1 ([Zotero](zotero://open-pdf/library/items/ATTACH01?page=1&annotation=ANNO1))",
+			"> Hand-curated existing highlight that must never be deleted",
+			"<!-- END ANNOTATIONS -->",
+			"",
+			"## My Notes",
+			"Personal thoughts.",
+		].join("\n");
+
+		let writtenContent = "";
+		let file = Object.assign(new TFile(), {
+			path: "02_Literature/lovelace2026analytical.md",
+			extension: "md",
+		});
+
+		let app = {
+			vault: {
+				getAbstractFileByPath: (p: string) => {
+					if (p === "02_Literature/lovelace2026analytical.md") return file;
+					return null;
+				},
+				read: async () => noteContent,
+				modify: async (_f: TFile, content: string) => {
+					writtenContent = content;
+				},
+			},
+		} as unknown as App;
+
+		let service = new LiteratureNoteService(app, testSettings);
+		await service.createOrUpdate("01_Papers/paper.pdf", paperRecord(), undefined);
+
+		if (writtenContent !== "") {
+			expect(writtenContent).toContain("Hand-curated existing highlight that must never be deleted");
+			expect(writtenContent).not.toContain("尚無劃線註解");
+		}
+	});
+
+	it("overwrites annotation block with empty callout when annotations is empty array []", async () => {
+		let noteContent = [
+			"---",
+			"type: literature",
+			'title: "Analytical Engines & Notes"',
+			'citation_key: "lovelace2026analytical"',
+			'zotero_item_key: "ITEM0001"',
+			'zotero_attachment_key: "ATTACH01"',
+			'pdf: "[[01_Papers/paper.pdf]]"',
+			"---",
+			"# Analytical Engines & Notes",
+			"",
+			"## Annotations",
+			"",
+			"<!-- BEGIN ANNOTATIONS -->",
+			"> [!quote]+ p. 1 ([Zotero](zotero://open-pdf/library/items/ATTACH01?page=1&annotation=ANNO1))",
+			"> Old highlight",
+			"<!-- END ANNOTATIONS -->",
+		].join("\n");
+
+		let writtenContent = "";
+		let file = Object.assign(new TFile(), {
+			path: "02_Literature/lovelace2026analytical.md",
+			extension: "md",
+		});
+
+		let app = {
+			vault: {
+				getAbstractFileByPath: (p: string) => {
+					if (p === "02_Literature/lovelace2026analytical.md") return file;
+					return null;
+				},
+				read: async () => noteContent,
+				modify: async (_f: TFile, content: string) => {
+					writtenContent = content;
+				},
+			},
+		} as unknown as App;
+
+		let service = new LiteratureNoteService(app, testSettings);
+		await service.createOrUpdate("01_Papers/paper.pdf", paperRecord(), []);
+
+		expect(writtenContent).toContain("<!-- BEGIN ANNOTATIONS -->");
+		expect(writtenContent).toContain("> [!info] 尚無劃線註解");
+		expect(writtenContent).not.toContain("Old highlight");
+	});
+});
+

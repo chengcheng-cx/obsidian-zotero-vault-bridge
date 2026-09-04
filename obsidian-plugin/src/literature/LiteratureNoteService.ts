@@ -65,7 +65,7 @@ export class LiteratureNoteService implements LiteratureNoteWriter {
 		}
 
 		let updated = updateManagedFrontmatter(content, literatureFrontmatter(context));
-		if (annotations) {
+		if (Array.isArray(annotations)) {
 			await this.saveAnnotationImages(settings.literatureFolder, context.citationKey, annotations);
 			let formatted = formatAnnotations(annotations, context.citationKey);
 			updated = updateManagedAnnotations(updated, formatted);
